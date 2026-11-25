@@ -50,7 +50,7 @@ const game = new Game({ onEvent(event) {
     case 'heart': tone(620, .18, 'sine', .07, 940); notice('A LITTLE LOVE  +10 HEALTH'); break;
     case 'jump': tone(240, .3, 'sine', .05, 720); notice('CATCHING SOME AIR'); break;
     case 'hit': tone(260, .08, 'square', .025, 120); break;
-    case 'sink': tone(90, .28, 'sawtooth', .06, 40); notice('PIRATE SUNK  +250'); break;
+    case 'sink': tone(90, .28, 'sawtooth', .06, 40); notice(`${event.name || 'PIRATE'} SUNK  +${event.reward || 250}`); break;
     case 'level': tone(450, .2, 'triangle', .06, 800); notice(`LEVEL ${event.level}  ·  ROUGHER WATERS`); break;
     case 'over': endRun(); break;
   }
@@ -190,7 +190,7 @@ function pirateAtPointer(event) {
   const rect = canvas.getBoundingClientRect();
   const x = (event.clientX - rect.left) / rect.width * 800;
   const y = (event.clientY - rect.top) / rect.height * 800;
-  return [...game.entities].reverse().find(e => e.type === 'pirate' && !e.dead && Math.abs(e.x - x) <= 37 && Math.abs(e.y - y) <= 63);
+  return [...game.entities].reverse().find(e => e.type === 'pirate' && !e.dead && Math.abs(e.x - x) <= 37 && Math.abs(e.y - y) <= 63) || game.bullets.find(b => b.mine && !b.dead && Math.abs(b.x - x) <= 25 && Math.abs(b.y - y) <= 25);
 }
 
 let gesture = null;

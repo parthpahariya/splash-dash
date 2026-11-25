@@ -1,4 +1,4 @@
-import { LANES, PLAYER_Y, JUMP_DURATION } from './engine.js';
+import { LANES, PLAYER_Y, JUMP_DURATION, PIRATES } from './engine.js';
 
 const TAU = Math.PI * 2;
 function ellipse(c, x, y, rx, ry, color) { c.fillStyle = color; c.beginPath(); c.ellipse(x, y, rx, ry, 0, 0, TAU); c.fill(); }
@@ -50,10 +50,19 @@ export class Renderer {
     }
     for (const e of game.entities) {
       if (e.type === 'rock') this.rock(c, e.x, e.y, 1, e.seed);
-      else if (e.type === 'pirate') this.pirate(c, e.x, e.y, time, e.hit, e.hp, game.x, e.flash);
+      else if (e.type === 'pirate') { this.pirateWarning(c, e); this.pirate(c, e.x, e.y, time, e.hit, e.hp, game.x, e.flash, e.pirateType); this.pirateHealth(c, e); }
       else this.heart(c, e.x, e.y, time, e.seed);
     }
     for (const b of game.bullets) {
+      if (b.mine) {
+        const color = b.armTime > 0 ? '#e8d6a6' : '#ffbd73';
+        ellipse(c, b.x, b.y + 6, 25, 14, '#bde6cc44');
+        for (let i = 0; i < 8; i++) { const a = i * TAU / 8; line(c, [[b.x + Math.cos(a) * 13, b.y + Math.sin(a) * 13], [b.x + Math.cos(a) * 22, b.y + Math.sin(a) * 22]], color, 4); }
+        ellipse(c, b.x, b.y, 16, 16, '#293e3d');
+        line(c, [[b.x - 5, b.y - 5], [b.x + 5, b.y + 5]], color, 3);
+        line(c, [[b.x + 5, b.y - 5], [b.x - 5, b.y + 5]], color, 3);
+        continue;
+      }
       if (b.enemy) {
         const speed = Math.hypot(b.vx || 0, b.vy) || 1;
         const tailX = b.x - (b.vx || 0) / speed * 36;
@@ -61,7 +70,7 @@ export class Renderer {
         line(c, [[tailX, tailY], [b.x, b.y]], '#f5ac713b', 7);
         line(c, [[tailX, tailY], [b.x, b.y]], '#ffd09caa', 3);
         ellipse(c, b.x, b.y, 13, 15, '#ffc08933');
-        ellipse(c, b.x, b.y, 8, 9, '#e9af78');
+        ellipse(c, b.x, b.y, b.radius || 8, (b.radius || 8) + 1, '#e9af78');
         ellipse(c, b.x, b.y, 6.5, 7.5, '#262e36');
         ellipse(c, b.x - 2, b.y - 3, 2.5, 2.5, '#ffe4b9');
       } else {
@@ -202,8 +211,45 @@ export class Renderer {
     c.restore();
   }
 
-  pirate(c, x, y, time, hit = 0, hp = 2, targetX = x, flash = 0) {
+  pirateWarning(c, e) {
+    if (e.warning <= 0 && !e.charging) return;
+    c.save();
+    if (e.pirateType === 'rammer') {
+      roundRect(c, e.x - 43, e.y + 60, 86, Math.max(1, 800 - e.y), 12, '#ff977b33');
+      for (let y = e.y + 100; y < 800; y += 65) line(c, [[e.x - 14, y - 10], [e.x, y + 4], [e.x + 14, y - 10]], '#ffe4b9', 3);
+    } else if (e.pirateType === 'sniper') {
+      c.setLineDash([8, 8]); line(c, [[e.x, e.y + 43], [e.aimX, PLAYER_Y]], '#ffb6ac', 3);
+      c.setLineDash([]); c.strokeStyle = '#fff1cc'; c.lineWidth = 2; c.beginPath(); c.arc(e.aimX, PLAYER_Y, 26, 0, TAU); c.stroke();
+    }
+    c.restore();
+  }
+
+  pirateHealth(c, e) {
+    const stats = PIRATES[e.pirateType];
+    const captain = e.pirateType === 'captain';
+    const width = captain ? 98 : 72;
+    const y = e.y - (captain ? 89 : 77);
+    roundRect(c, e.x - width / 2 - 8, y - 17, width + 16, 35, 6, '#173e46');
+    c.textAlign = 'center'; c.font = 'bold 11px sans-serif'; c.fillStyle = '#fff1d0';
+    c.fillText(stats.name.toUpperCase(), e.x, y - 4);
+    if (captain) {
+      roundRect(c, e.x - width / 2, y + 3, width, 7, 3, '#526265');
+      roundRect(c, e.x - width / 2, y + 3, width * Math.max(0, e.hp) / e.maxHp, 7, 3, stats.color);
+      c.font = 'bold 11px sans-serif'; c.fillText(`${e.hp}/${e.maxHp}${e.hp <= 5 ? ' · ENRAGED' : ''}`, e.x, y - 21);
+    } else {
+      for (let i = 0; i < e.maxHp; i++) roundRect(c, e.x - (e.maxHp * 10 - 3) / 2 + i * 10, y + 3, 7, 6, 2, i < e.hp ? stats.color : '#526265');
+    }
+    if (e.warning > 0 || e.charging) {
+      const label = e.pirateType === 'sniper' ? 'AIM LOCKED' : e.pirateType === 'rammer' ? (e.charging ? 'CHARGE!' : 'BRACE!') : e.attackStep % 2 === 0 ? 'BURST INCOMING' : 'SPREAD INCOMING';
+      roundRect(c, e.x - 62, e.y + 77, 124, 22, 5, '#442f35');
+      c.fillStyle = '#fff1d0'; c.font = 'bold 11px sans-serif'; c.fillText(label, e.x, e.y + 92);
+    }
+  }
+
+  pirate(c, x, y, time, hit = 0, hp = 2, targetX = x, flash = 0, type = 'gunner') {
     c.save(); c.translate(x, y);
+    if (type === 'captain') c.scale(1.12, 1.12);
+    const color = PIRATES[type].color;
     ellipse(c, 5, 13, 32, 56, '#0f4e5566');
     line(c, [[-27, -20], [-36, -59]], '#d2f0df55', 2); line(c, [[27, -20], [36, -59]], '#d2f0df55', 2);
     path(c, [[0, 59], [-21, 35], [-29, -5], [-22, -45], [0, -53], [22, -45], [29, -5], [21, 35]], hit ? '#ffe1ad' : '#684b3d', '#be8a63', 2);
@@ -218,13 +264,20 @@ export class Renderer {
     }
     c.restore();
     line(c, [[0, -40], [0, 24]], '#523e32', 4);
-    path(c, [[-30, -28], [28, -28], [22, 19], [0, 13], [-22, 19]], hit ? '#ffd1a1' : '#a04b45', '#d18469', 1.5);
-    path(c, [[-30, -28], [-20, -16], [20, -16], [28, -28]], '#bd6654');
+    path(c, [[-30, -28], [28, -28], [22, 19], [0, 13], [-22, 19]], hit ? '#ffd1a1' : color, '#d18469', 1.5);
+    path(c, [[-30, -28], [-20, -16], [20, -16], [28, -28]], color);
     // Tiny skull on a red sail, facing the captain.
     ellipse(c, 0, -3, 8, 8, '#f4dfba');
     roundRect(c, -5, 1, 10, 8, 1, '#f4dfba');
     ellipse(c, -3, -3, 2, 2, '#8d4841'); ellipse(c, 3, -3, 2, 2, '#8d4841');
     line(c, [[-10, 12], [10, 17]], '#f4dfba', 2); line(c, [[10, 12], [-10, 17]], '#f4dfba', 2);
+    // Silhouettes supplement sail colors and the type label.
+    if (type === 'scatter' || type === 'burst') for (const x of [-19, 19]) roundRect(c, x - 4, 29, 8, 24, 2, '#29343b');
+    if (type === 'sniper') roundRect(c, -4, 30, 8, 40, 2, '#29343b');
+    if (type === 'rammer') path(c, [[-18, 40], [0, 76], [18, 40]], '#c9c3a7', '#433f3a', 2);
+    if (type === 'ironclad') for (const x of [-27, 20]) roundRect(c, x, -24, 7, 55, 2, '#9ab6c3');
+    if (type === 'minelayer') for (const x of [-20, 20]) { ellipse(c, x, -34, 8, 9, '#354e3c'); line(c, [[x - 5, -34], [x + 5, -34]], '#c4d6a3', 2); }
+    if (type === 'captain') { line(c, [[-25, 33], [0, 59], [25, 33]], '#f3c75f', 4); path(c, [[-12, -30], [-12, -42], [-5, -36], [0, -46], [5, -36], [12, -42], [12, -30]], '#f3c75f'); }
     if (hp === 1) { c.strokeStyle = '#2c3735'; c.lineWidth = 2; c.beginPath(); c.moveTo(-24, -9); c.lineTo(-14, -3); c.lineTo(-21, 9); c.stroke(); }
     c.restore();
   }

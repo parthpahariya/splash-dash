@@ -309,3 +309,154 @@ test('a pirate flashes its cannon only briefly when launching a shot', () => {
   advance(g, .2);
   assert.equal(pirate.flash, 0);
 });
+
+test('all nine pirate types take their advertised hits and award their own rewards', async () => {
+  const { PIRATES } = await import('../src/engine.js');
+  assert.deepEqual(Object.values(PIRATES).map(p => p.hp), [1, 2, 3, 3, 2, 4, 3, 6, 10]);
+  for (const [type, stats] of Object.entries(PIRATES)) {
+    const g = fresh(); const e = g.spawn('pirate', 1, 300, type);
+    assert.equal(e.hp, stats.hp); assert.equal(e.maxHp, stats.hp);
+    for (let hit = 1; hit <= stats.hp; hit++) {
+      g.bullets.push({ x: e.x, y: e.y, vx: 0, vy: 0, enemy: false }); g.update(0);
+      assert.equal(e.hp, stats.hp - hit);
+      assert.equal(e.dead, hit === stats.hp);
+    }
+    assert.equal(g.bonus, stats.reward); assert.equal(g.piratesSunk, 1);
+  }
+  assert.equal(fresh().spawn('pirate', 1, 300, 'unknown'), null);
+});
+
+test('automatic encounters unlock the full roster gradually and limit captains', async () => {
+  const { PIRATES } = await import('../src/engine.js');
+  const g = fresh();
+  for (let level = 1; level <= 5; level++) {
+    g.level = level; g.distance = (level - 1) * 300;
+    const available = new Set();
+    for (let i = 0; i < 100; i++) { g.random = () => i / 100; available.add(g.choosePirate()); }
+    assert.deepEqual([...available].sort(), Object.keys(PIRATES).filter(type => PIRATES[type].unlock <= level).sort());
+  }
+  g.random = () => .999;
+  g.lastCaptainDistance = g.distance;
+  assert.notEqual(g.choosePirate(), 'captain');
+  g.lastCaptainDistance = -900;
+  g.spawn('pirate', 0, 100, 'captain');
+  assert.notEqual(g.choosePirate(), 'captain');
+});
+
+test('scouts reload faster, raiders fire three timed shots, and spreads fan out', () => {
+  const scout = fresh(); const s = scout.spawn('pirate', 0, 180, 'scout'); s.cooldown = 0; scout.update(.01);
+  assert.equal(scout.bullets.length, 1); assert.equal(s.cooldown, 1.4);
+  const burst = fresh(); const b = burst.spawn('pirate', 0, 180, 'burst'); b.cooldown = 0; burst.update(.01);
+  assert.equal(burst.bullets.length, 1);
+  advance(burst, .4); assert.equal(burst.bullets.length, 3);
+  advance(burst, .6); assert.equal(burst.bullets.length, 3);
+  const spread = fresh(); const e = spread.spawn('pirate', 1, 180, 'scatter'); e.cooldown = 0; spread.update(.01);
+  const shots = spread.bullets;
+  assert.equal(shots.length, 3); assert.ok(shots[0].vx > shots[1].vx && shots[1].vx > shots[2].vx);
+  assert.ok(shots.every(b => Math.abs(Math.hypot(b.vx, b.vy) - 273) < .001));
+});
+
+test('sharpshooters warn, lock their aim, and fire a fast heavy shot at the old position', () => {
+  const g = fresh(); const e = g.spawn('pirate', 0, 180, 'sniper'); e.cooldown = 0; g.update(.01);
+  assert.equal(e.warning, 1.1); assert.equal(g.bullets.length, 0);
+  const locked = e.aimX;
+  g.lane = 3; g.x = LANES[3];
+  advance(g, 1.11);
+  const shot = g.bullets[0];
+  assert.equal(shot.damage, 25); assert.ok(Math.abs(Math.hypot(shot.vx, shot.vy) - 480) < .001);
+  assert.ok(Math.abs(shot.x + shot.vx * (PLAYER_Y - shot.y) / shot.vy - locked) < .001);
+});
+
+test('rammers warn before charging, stay in their lane, and deal 40 contact damage', () => {
+  const g = fresh(); const e = g.spawn('pirate', 0, 180, 'rammer'); e.cooldown = 0; g.update(.01);
+  assert.equal(e.warning, .9); assert.equal(e.charging, false);
+  advance(g, .91); assert.equal(e.charging, true); assert.equal(g.bullets.length, 0);
+  const y = e.y; advance(g, .1); assert.ok(e.y - y > g.speed * .2); assert.equal(e.x, LANES[0]);
+  e.y = PLAYER_Y; g.lane = 0; g.x = LANES[0]; g.update(0); assert.equal(g.health, 60);
+});
+
+test('charging rammers retain spacing behind rocks and hearts', () => {
+  for (const type of ['rock', 'heart']) {
+    const g = fresh(); const obstacle = g.spawn(type, 0, 350);
+    const rammer = g.spawn('pirate', 0, 150, 'rammer'); rammer.charging = true;
+    advance(g, 1);
+    assert.ok(obstacle.y - rammer.y >= SPAWN_GAP);
+  }
+});
+
+test('mines arm before damaging, can be targeted, and disappear when shot', () => {
+  const g = fresh(); const e = g.spawn('pirate', 0, 150, 'minelayer'); e.cooldown = 0; g.update(.01);
+  const mine = g.bullets[0]; assert.equal(mine.mine, true); assert.equal(mine.damage, 25);
+  assert.ok(mine.armTime > 0); assert.equal(g.fire(mine), true);
+  g.bullets = [mine]; g.entities = [];
+  mine.x = g.x; mine.y = PLAYER_Y; mine.vy = 0;
+  advance(g, .7); assert.equal(g.health, 100);
+  advance(g, .12); assert.equal(g.health, 75);
+  const clear = fresh(); const layer = clear.spawn('pirate', 0, 150, 'minelayer'); layer.cooldown = 0; clear.update(.01);
+  const target = clear.bullets[0];
+  clear.bullets.push({ x: target.x, y: target.y, vx: 0, vy: 0, enemy: false }); clear.update(0);
+  assert.ok(!clear.bullets.includes(target)); assert.equal(clear.piratesSunk, 0);
+  assert.equal(clear.fire(target), false);
+});
+
+test('ironclads launch two slow heavy cannonballs with a long reload', () => {
+  const g = fresh(); const e = g.spawn('pirate', 0, 150, 'ironclad'); e.cooldown = 0; g.update(.01);
+  assert.equal(g.bullets.length, 2); assert.equal(e.cooldown, 4);
+  assert.ok(g.bullets.every(b => b.damage === 25 && Math.abs(Math.hypot(b.vx, b.vy) - 190) < .001));
+});
+
+test('captains alternate warned bursts and spreads and reload faster at half health', () => {
+  const g = fresh(); const e = g.spawn('pirate', 0, 150, 'captain'); e.cooldown = 0; g.update(.01);
+  assert.equal(e.warning, .65); assert.equal(g.bullets.length, 0);
+  advance(g, .66); assert.equal(e.burstLeft, 2); assert.equal(e.attackStep, 1);
+  advance(g, .4); assert.equal(g.bullets.length, 3);
+  g.bullets = []; e.cooldown = 0; e.hp = 5; g.update(.01); advance(g, .65);
+  assert.equal(g.bullets.length, 3); assert.equal(e.attackStep, 2); assert.ok(e.cooldown <= 1.6);
+  assert.ok(e.cooldown > 1.5);
+});
+
+test('pausing freezes attack warnings, burst timers and mine arming; sinking cancels pending fire', () => {
+  const g = fresh(); const e = g.spawn('pirate', 0, 150, 'sniper'); e.cooldown = 0; g.update(.01);
+  g.pause(); advance(g, 2); assert.equal(e.warning, 1.1); g.pause();
+  e.hp = 1; g.bullets.push({ x: e.x, y: e.y, vx: 0, vy: 0, enemy: false }); g.update(0);
+  advance(g, 1.2); assert.equal(g.bullets.length, 0);
+  const b = fresh(); const raider = b.spawn('pirate', 0, 150, 'burst'); raider.cooldown = 0; b.update(.01);
+  const timer = raider.burstTimer; b.pause(); advance(b, 1); assert.equal(raider.burstTimer, timer);
+  const m = fresh(); const layer = m.spawn('pirate', 0, 150, 'minelayer'); layer.cooldown = 0; m.update(.01);
+  const mine = m.bullets[0], arm = mine.armTime; m.pause(); advance(m, 1); assert.equal(mine.armTime, arm);
+});
+
+test('faster pirates cannot catch a captain or overlap its health and warning labels', () => {
+  const g = fresh();
+  const captain = g.spawn('pirate', 0, 350, 'captain'); captain.cooldown = 1000;
+  const gunner = g.spawn('pirate', 0, 200, 'gunner');
+  assert.ok(captain.y - gunner.y >= 220);
+  advance(g, 2);
+  assert.ok(captain.y - gunner.y >= 220);
+});
+
+test('rammers cannot share a lane with any live pirate in either spawn order', async () => {
+  const { PIRATES } = await import('../src/engine.js');
+  for (const type of Object.keys(PIRATES)) {
+    for (const [first, second] of [[type, 'rammer'], ['rammer', type]]) {
+      const g = fresh();
+      const existing = g.spawn('pirate', 0, 500, first);
+      assert.ok(existing);
+      assert.equal(g.spawn('pirate', 0, -80, second), null, `${first} must exclude ${second}`);
+      assert.equal(g.entities.length, 1);
+      assert.ok(g.spawn('pirate', 1, -80, second), 'Another lane remains available');
+      existing.dead = true;
+      assert.ok(g.spawn('pirate', 0, -80, second), 'The lane is available after its pirate dies');
+    }
+  }
+});
+
+test('pending attacks finish after pirates cross the player approach boundary', () => {
+  for (const type of ['sniper', 'burst']) {
+    const g = fresh(); g.distance = 3000;
+    const e = g.spawn('pirate', 0, 550, type); e.cooldown = 0;
+    g.update(.01); advance(g, type === 'sniper' ? 1.11 : .4);
+    assert.equal(e.warning, 0); assert.equal(e.burstLeft, 0);
+    assert.ok(g.bullets.some(b => b.enemy));
+  }
+});

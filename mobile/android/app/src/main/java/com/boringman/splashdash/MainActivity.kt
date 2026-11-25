@@ -59,7 +59,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
                 "damage" -> "Hull hit — change lanes!"
                 "jump" -> "Catching some air"
                 "heart" -> "+10 hull · +50 points"
-                "sink" -> "Pirate sunk · +250 points"
+                "sink" -> "${game.lastSunkName} sunk · +${game.lastSunkReward} points"
                 "level" -> "Level ${game.level} · rougher waters"
                 else -> null
             }
@@ -285,7 +285,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         if (game.status == Status.PLAYING) game.pause()
         updateHUD()
         AlertDialog.Builder(this).setTitle("Captain’s handbook")
-            .setMessage("Swipe left or right across the water to steer. Swipe up to jump. Screen-reader actions on the waterway also let you steer and jump.\n\nHold Fire to shoot ahead. Tap a pirate to aim across lanes; two hits sink it for 250 points.\n\nJump clears rocks, ships and cannonballs for 1.15 seconds. Start with two jumps each voyage. Jump charges cannot be collected.\n\nHearts repair 10 hull. Rocks cost 25 hull, cannonballs 15, ships 30.\n\nEvery 300 meters the water gets faster. Sound starts off. Your best score is saved on this device.")
+            .setMessage("Swipe left or right across the water to steer. Swipe up to jump. Screen-reader actions on the waterway also let you steer and jump.\n\nHold Fire to shoot ahead. Tap a pirate or mine to aim across lanes. Each hit removes one health pip; tougher ships earn more points.\n\nJump clears rocks, ships and cannonballs for 1.15 seconds. Start with two jumps each voyage. Jump charges cannot be collected.\n\nHearts repair 10 hull. Rocks cost 25 hull; cannonballs 15, heavy and sniper shots 25, mines 25, ships 30, charging Rammers 40.\n\nScout 1 hull; Gunner 2; Burst Raider 3; Scattershot 3; Sharpshooter 2; Rammer 4; Minelayer 3; Ironclad 6; Captain 10. New types arrive as levels increase.\n\nWatch aim locks and charge warnings. Dodge bursts and spreads; shoot mines to clear a path. Captains alternate attacks and speed up at half health.\n\nEvery 300 meters the water gets faster. Sound starts off. Your best score is saved on this device.")
             .setPositiveButton("Got it", null).show()
     }
     private fun saveBest() { best = max(best, game.score); prefs.edit().putInt("best", best).apply() }

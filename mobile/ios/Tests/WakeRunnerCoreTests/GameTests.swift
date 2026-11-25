@@ -258,4 +258,143 @@ final class GameTests: XCTestCase {
       }
     }
   }
+  private func advance(_ g: Game, _ seconds: Double) {
+    for _ in 0..<Int(ceil(seconds / 0.01)) { g.update(0.01) }
+  }
+  func testAllPiratesHaveDistinctHealthAndRewards() {
+    XCTAssertEqual(PirateType.allCases.map { $0.stats.hp }, [1, 2, 3, 3, 2, 4, 3, 6, 10])
+    for type in PirateType.allCases {
+      let g = game(), stats = type.stats
+      let e = g.spawn(.pirate, lane: 1, y: 300, pirateType: type)!
+      XCTAssertEqual(e.hp, stats.hp)
+      for hit in 1...stats.hp {
+        g.bullets.append(Bullet(x: e.x, y: e.y, vx: 0, vy: 0, enemy: false)); g.update(0)
+        XCTAssertEqual(e.hp, stats.hp - hit); XCTAssertEqual(e.dead, hit == stats.hp)
+      }
+      XCTAssertEqual(g.bonus, stats.reward); XCTAssertEqual(g.lastSunkReward, stats.reward)
+      XCTAssertEqual(g.lastSunkName, stats.name); XCTAssertEqual(g.piratesSunk, 1)
+    }
+  }
+  func testEncounterUnlocksAndOneCaptainAtATime() {
+    var roll = 0.0
+    let g = Game(random: { roll }); g.reset()
+    for level in 1...5 {
+      g.level = level; g.distance = Double((level - 1) * 300)
+      var seen = Set<PirateType>()
+      for i in 0..<100 { roll = Double(i) / 100; seen.insert(g.choosePirate()) }
+      XCTAssertEqual(seen, Set(PirateType.allCases.filter { $0.stats.unlock <= level }))
+    }
+    g.spawn(.pirate, lane: 0, y: 150, pirateType: .captain)
+    roll = 0.999; XCTAssertNotEqual(g.choosePirate(), .captain)
+  }
+  func testScoutBurstAndSpreadAttacks() {
+    let scout = game(), burst = game(), spread = game()
+    let s = scout.spawn(.pirate, lane: 0, y: 150, pirateType: .scout)!
+    s.cooldown = 0; scout.update(0.01)
+    XCTAssertEqual(scout.bullets.count, 1); XCTAssertEqual(s.cooldown, 1.4)
+    let b = burst.spawn(.pirate, lane: 0, y: 150, pirateType: .burst)!
+    b.cooldown = 0; burst.update(0.01); XCTAssertEqual(burst.bullets.count, 1)
+    advance(burst, 0.4); XCTAssertEqual(burst.bullets.count, 3)
+    advance(burst, 0.6); XCTAssertEqual(burst.bullets.count, 3)
+    let e = spread.spawn(.pirate, lane: 1, y: 150, pirateType: .scatter)!
+    e.cooldown = 0; spread.update(0.01)
+    XCTAssertEqual(spread.bullets.count, 3)
+    XCTAssertGreaterThan(spread.bullets[0].vx, spread.bullets[1].vx)
+    XCTAssertGreaterThan(spread.bullets[1].vx, spread.bullets[2].vx)
+  }
+  func testSniperLocksAimBeforeFiring() {
+    let g = game(), e = game().spawn(.pirate) // a separate instance must never be a valid target
+    XCTAssertFalse(g.fire(target: e))
+    let sniper = g.spawn(.pirate, lane: 0, y: 150, pirateType: .sniper)!
+    sniper.cooldown = 0; g.update(0.01)
+    XCTAssertEqual(sniper.warning, 1.1); XCTAssertTrue(g.bullets.isEmpty)
+    let aim = sniper.aimX; g.lane = 3; g.x = Game.lanes[3]
+    advance(g, 1.11)
+    let shot = g.bullets[0]
+    XCTAssertEqual(shot.damage, 25); XCTAssertEqual(hypot(shot.vx, shot.vy), 480, accuracy: 0.001)
+    XCTAssertEqual(shot.x + shot.vx * (Game.playerY - shot.y) / shot.vy, aim, accuracy: 0.001)
+  }
+  func testRammerWarningChargeDamageAndSpacing() {
+    let g = game(); let e = g.spawn(.pirate, lane: 0, y: 150, pirateType: .rammer)!
+    e.cooldown = 0; g.update(0.01)
+    XCTAssertEqual(e.warning, 0.9); XCTAssertFalse(e.charging)
+    advance(g, 0.91); XCTAssertTrue(e.charging); XCTAssertTrue(g.bullets.isEmpty)
+    let y = e.y; advance(g, 0.1); XCTAssertGreaterThan(e.y - y, g.speed * 0.2)
+    e.y = Game.playerY; g.lane = 0; g.x = Game.lanes[0]; g.update(0)
+    XCTAssertEqual(g.health, 60)
+    for kind: EntityKind in [.rock, .heart] {
+      let spaced = game(); let obstacle = spaced.spawn(kind, lane: 0, y: 350)!
+      let rammer = spaced.spawn(.pirate, lane: 0, y: 150, pirateType: .rammer)!
+      rammer.charging = true; advance(spaced, 1)
+      XCTAssertGreaterThanOrEqual(obstacle.y - rammer.y, 120)
+    }
+  }
+  func testMineArmingDamageTargetingAndDestruction() {
+    let g = game(); let e = g.spawn(.pirate, lane: 0, y: 150, pirateType: .minelayer)!
+    e.cooldown = 0; g.update(0.01)
+    let mine = g.bullets[0]
+    XCTAssertTrue(mine.mine); XCTAssertGreaterThan(mine.armTime, 0)
+    XCTAssertTrue(g.fireAt(targetX: mine.x, targetY: mine.y))
+    g.bullets.removeAll { $0 !== mine }; g.entities.removeAll()
+    // Advance a mine into the boat while it is still unarmed.
+    mine.x = g.x; mine.y = Game.playerY - 90
+    advance(g, 0.3); XCTAssertEqual(g.health, 100)
+    advance(g, 0.5); XCTAssertEqual(g.health, 75)
+    let clear = game(); let layer = clear.spawn(.pirate, lane: 0, y: 150, pirateType: .minelayer)!
+    layer.cooldown = 0; clear.update(0.01); let target = clear.bullets[0]
+    clear.bullets.append(Bullet(x: target.x, y: target.y, vx: 0, vy: 0, enemy: false)); clear.update(0)
+    XCTAssertTrue(target.dead); XCTAssertEqual(clear.piratesSunk, 0)
+  }
+  func testIroncladHeavyPairAndCaptainPhases() {
+    let g = game(); let iron = g.spawn(.pirate, lane: 0, y: 150, pirateType: .ironclad)!
+    iron.cooldown = 0; g.update(0.01)
+    XCTAssertEqual(g.bullets.count, 2); XCTAssertEqual(iron.cooldown, 4)
+    for shot in g.bullets { XCTAssertEqual(shot.damage, 25); XCTAssertEqual(hypot(shot.vx, shot.vy), 190, accuracy: 0.001) }
+    let boss = game(); let captain = boss.spawn(.pirate, lane: 0, y: 150, pirateType: .captain)!
+    captain.cooldown = 0; boss.update(0.01); XCTAssertEqual(captain.warning, 0.65)
+    advance(boss, 0.66); XCTAssertEqual(captain.burstLeft, 2)
+    advance(boss, 0.4); XCTAssertEqual(boss.bullets.count, 3)
+    boss.bullets.removeAll(); captain.cooldown = 0; captain.hp = 5
+    boss.update(0.01); advance(boss, 0.65)
+    XCTAssertEqual(boss.bullets.count, 3); XCTAssertEqual(captain.attackStep, 2)
+    XCTAssertEqual(captain.cooldown, 1.6, accuracy: 0.011)
+  }
+  func testPauseFreezesNewAttacksAndSinkingCancelsWarning() {
+    let g = game(); let e = g.spawn(.pirate, lane: 0, y: 150, pirateType: .sniper)!
+    e.cooldown = 0; g.update(0.01); g.pause(); advance(g, 2)
+    XCTAssertEqual(e.warning, 1.1); g.pause(); e.hp = 1
+    g.bullets.append(Bullet(x: e.x, y: e.y, vx: 0, vy: 0, enemy: false)); g.update(0)
+    advance(g, 1.2); XCTAssertTrue(g.bullets.isEmpty)
+    for type: PirateType in [.burst, .minelayer] {
+      let paused = game(); let p = paused.spawn(.pirate, lane: 0, y: 150, pirateType: type)!
+      p.cooldown = 0; paused.update(0.01)
+      let timer = p.burstTimer, arm = paused.bullets[0].armTime
+      paused.pause(); advance(paused, 1)
+      XCTAssertEqual(p.burstTimer, timer); XCTAssertEqual(paused.bullets[0].armTime, arm)
+    }
+  }
+
+  func testFasterPiratesCannotCatchCaptain() {
+    let g = game(); let captain = g.spawn(.pirate, lane: 0, y: 350, pirateType: .captain)!
+    captain.cooldown = 1000
+    let gunner = g.spawn(.pirate, lane: 0, y: 200, pirateType: .gunner)!
+    XCTAssertGreaterThanOrEqual(captain.y - gunner.y, Game.pirateGap)
+    advance(g, 2)
+    XCTAssertGreaterThanOrEqual(captain.y - gunner.y, Game.pirateGap)
+  }
+
+  func testRammersCannotShareLaneWithAnyLivePirate() {
+    for type in PirateType.allCases {
+      for (first, second) in [(type, PirateType.rammer), (PirateType.rammer, type)] {
+        let g = game()
+        let existing = g.spawn(.pirate, lane: 0, y: 500, pirateType: first)!
+        XCTAssertNil(g.spawn(.pirate, lane: 0, y: -80, pirateType: second))
+        XCTAssertEqual(g.entities.count, 1)
+        XCTAssertNotNil(g.spawn(.pirate, lane: 1, y: -80, pirateType: second))
+        existing.dead = true
+        XCTAssertNotNil(g.spawn(.pirate, lane: 0, y: -80, pirateType: second))
+      }
+    }
+  }
+
 }

@@ -34,16 +34,32 @@ On phones, the game fits the available screen height with large touch controls, 
 ## Rules
 
 - Start with 100 hull health and two jumps.
-- Rock collisions deal 25 damage, pirate cannonballs deal 15, and pirate collisions deal 30.
-- Pirates aim each cannonball at your boat's position when they fire. Change lanes or press Up Arrow to jump over incoming shots.
+- Rocks deal 25 damage, normal cannonballs 15, heavy/sniper shots and mines 25, ship collisions 30, and charging Rammers 40.
+- Pirates use the nine attack patterns listed below. Change lanes, exploit reload windows, destroy mines, or jump over incoming hazards.
 - Cannon launches flash and leave a visible trail. During a jump, cannonballs pass underneath the raised boat and continue offscreen without dealing damage.
 - Damage gives a short grace period so one collision cannot drain the whole hull.
 - Hearts restore 10 health, up to 100, and award 50 points.
 - Each voyage has two jumps. Jumps last 1.15 seconds and clear hazards; pickups do not replenish jump charges.
 - Hearts stay separated from each other and from rocks. A pickup can appear above a rock in the same lane, with a clear gap.
 - Pirate ships never overlap rocks: rocks use lanes without pirates, and new pirates enter above existing rocks with a safe gap that grows as they scroll.
-- Two cannon hits sink a pirate for 250 points.
-- Click or tap a pirate ship to aim a shot at it from any lane. Shots travel in a straight line; swiping across a pirate still steers instead of firing.
+- Each player cannon hit removes one pirate health point. Ships show type labels and health pips; Captains have a health bar. Sinking rewards vary by type.
+- Click or tap a pirate ship or mine to aim a shot at it from any lane. Shots travel in a straight line; swiping across a pirate still steers instead of firing.
 - Sail for two points per meter. The game speeds up every 300 meters.
 
 The game engine is independent of rendering in `src/engine.js`, with deterministic tests in `tests/engine.test.mjs`. The illustrated water, boats, islands, pickups, and effects are drawn in Canvas; no image files or network assets are needed for gameplay. Google Fonts are optional and have local fallbacks.
+
+## Pirate fleet
+
+| Pirate | Health | Attack | Unlock level | Sink points |
+| --- | ---: | --- | ---: | ---: |
+| Scout | 1 | Frequent single aimed shots | 1 | 125 |
+| Gunner | 2 | Standard aimed cannonball | 1 | 250 |
+| Burst Raider | 3 | Three aimed shots, 0.18 seconds apart, then a long reload | 2 | 350 |
+| Scattershot | 3 | Three-shot fan with a slow reload | 2 | 350 |
+| Sharpshooter | 2 | Locks your position for 1.1 seconds, then fires a fast 25-damage shot | 3 | 300 |
+| Rammer | 4 | Warns for 0.9 seconds, then charges straight down its lane | 3 | 400 |
+| Minelayer | 3 | Drops 25-damage mines that arm after 0.8 seconds and can be shot | 3 | 350 |
+| Ironclad | 6 | Paired slow, heavy 25-damage shots with a four-second reload | 4 | 600 |
+| Pirate Captain | 10 | Warned alternating bursts and spreads; shorter reload at half health | 5 | 1,500 |
+
+Automatic encounters favor Scouts and Gunners early on. Captains are rare, never spawn together, and require 900 meters between appearances. Ships keep 220 units apart in the same lane so health labels and attack warnings stay readable. Rammers never share a lane with another live pirate: a Rammer cannot spawn in an occupied pirate lane, and other pirates cannot spawn in its lane until it sinks or leaves. Rammers stay in their lane and maintain a safe gap behind rocks and hearts. Each platform uses this roster while preserving its existing jump and viewport rules.

@@ -35,7 +35,7 @@ final class WaterView: UIView {
     isAccessibilityElement = true
     accessibilityLabel = "Four-lane waterway"
     accessibilityHint =
-      "Swipe left or right to steer, swipe up to jump, or tap a pirate to aim. Custom actions also let you steer and jump."
+      "Swipe left or right to steer, swipe up to jump, or tap a pirate or mine to aim. Custom actions also let you steer and jump."
     accessibilityCustomActions = [
       UIAccessibilityCustomAction(name: "Steer left", target: self, selector: #selector(steerLeft)),
       UIAccessibilityCustomAction(
@@ -146,7 +146,9 @@ final class WaterView: UIView {
       case .rock: rock(c, e.x, e.y, time)
       case .pirate:
         wake(c, e.x, e.y - 50, flip: true, time)
-        boat(c, e.x, e.y, pirate: true, hit: e.hit > 0)
+        pirateWarning(c, e)
+        boat(c, e.x, e.y, pirate: true, hit: e.hit > 0, type: e.pirateType)
+        pirateHealth(c, e)
         if e.hp == 1 {
           line(c, e.x - 14, e.y + 14, e.x + 2, e.y, Ink.outline, 4)
           line(c, e.x + 2, e.y, e.x + 14, e.y - 16, Ink.outline, 4)
@@ -159,12 +161,24 @@ final class WaterView: UIView {
       }
     }
     for b in game.bullets where !b.dead {
+      if b.mine {
+        let color = b.armTime > 0 ? "E8D6A6" : "FFBD73"
+        oval(c, b.x, b.y + 6, 25, 14, "BDE6CC", alpha: 0.3)
+        for i in 0..<8 {
+          let a = Double(i) * .pi / 4
+          line(c, b.x + cos(a) * 13, b.y + sin(a) * 13, b.x + cos(a) * 22, b.y + sin(a) * 22, color, 4)
+        }
+        oval(c, b.x, b.y, 16, 16, "293E3D")
+        line(c, b.x - 5, b.y - 5, b.x + 5, b.y + 5, color, 3)
+        line(c, b.x + 5, b.y - 5, b.x - 5, b.y + 5, color, 3)
+        continue
+      }
       let speed = max(1, hypot(b.vx, b.vy))
       let tx = b.x - b.vx / speed * 34
       let ty = b.y - b.vy / speed * 34
       if b.enemy {
         line(c, tx, ty, b.x, b.y, "FF9A4D", 6, alpha: 0.55)
-        oval(c, b.x, b.y, 10, 10, Ink.outline)
+        oval(c, b.x, b.y, b.radius + 2, b.radius + 2, Ink.outline)
         oval(c, b.x, b.y, 7, 7, "3A4A52")
         oval(c, b.x - 2.5, b.y - 2.5, 2.5, 2.5, "8FA1A8")
       } else {
@@ -287,11 +301,59 @@ final class WaterView: UIView {
     oval(c, x, y + d * 8, 14, 9, "FFFFFF", alpha: 0.5)
   }
 
-  private func boat(_ c: CGContext, _ x: Double, _ y: Double, pirate: Bool, hit: Bool = false) {
+  private func pirateText(_ text: String, _ x: Double, _ y: Double, _ size: Double = 12) {
+    let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.boldSystemFont(ofSize: size), .foregroundColor: UIColor(hex: "FFF1D0")]
+    let width = (text as NSString).size(withAttributes: attributes).width
+    (text as NSString).draw(at: CGPoint(x: x - width / 2, y: y), withAttributes: attributes)
+  }
+  private func pirateWarning(_ c: CGContext, _ e: Entity) {
+    guard e.warning > 0 || e.charging else { return }
+    if e.pirateType == .rammer {
+      c.setFillColor(UIColor(hex: "FF977B").withAlphaComponent(0.2).cgColor)
+      c.fill(CGRect(x: e.x - 43, y: e.y + 60, width: 86, height: max(1, game.visibleBottom - e.y)))
+      for y in stride(from: e.y + 100, to: game.visibleBottom, by: 65) {
+        line(c, e.x - 14, y - 10, e.x, y + 4, "FFE4B9", 3)
+        line(c, e.x, y + 4, e.x + 14, y - 10, "FFE4B9", 3)
+      }
+    } else if e.pirateType == .sniper {
+      c.setLineDash(phase: 0, lengths: [8, 8])
+      line(c, e.x, e.y + 43, e.aimX, Game.playerY, "FFB6AC", 3)
+      c.setLineDash(phase: 0, lengths: [])
+      c.setStrokeColor(UIColor(hex: "FFF1CC").cgColor)
+      c.setLineWidth(2)
+      c.strokeEllipse(in: CGRect(x: e.aimX - 26, y: Game.playerY - 26, width: 52, height: 52))
+    }
+  }
+  private func pirateHealth(_ c: CGContext, _ e: Entity) {
+    let captain = e.pirateType == .captain
+    let y = e.y - (captain ? 91 : 83)
+    c.setFillColor(UIColor(hex: "173E46").cgColor)
+    c.fill(CGRect(x: e.x - 59, y: y - 3, width: 118, height: 34))
+    pirateText(e.pirateType.stats.name.uppercased(), e.x, y, 12)
+    if captain {
+      line(c, e.x - 48, y + 23, e.x + 48, y + 23, "526265", 7)
+      if e.hp > 0 { line(c, e.x - 48, y + 23, e.x - 48 + 96 * Double(e.hp) / Double(e.maxHp), y + 23, e.pirateType.stats.color, 7) }
+      pirateText("\(e.hp)/\(e.maxHp)" + (e.hp <= 5 ? " · ENRAGED" : ""), e.x, y - 19)
+    } else {
+      for i in 0..<e.maxHp {
+        let x = e.x - Double(e.maxHp * 10 - 3) / 2 + Double(i * 10)
+        c.setFillColor(UIColor(hex: i < e.hp ? e.pirateType.stats.color : "526265").cgColor)
+        c.fill(CGRect(x: x, y: y + 20, width: 7, height: 6))
+      }
+    }
+    if e.warning > 0 || e.charging {
+      let label = e.pirateType == .sniper ? "AIM LOCKED" : e.pirateType == .rammer ? (e.charging ? "CHARGE!" : "BRACE!") : e.attackStep % 2 == 0 ? "BURST INCOMING" : "SPREAD INCOMING"
+      c.setFillColor(UIColor(hex: "442F35").cgColor)
+      c.fill(CGRect(x: e.x - 63, y: e.y + 78, width: 126, height: 22))
+      pirateText(label, e.x, e.y + 81, 12)
+    }
+  }
+  private func boat(_ c: CGContext, _ x: Double, _ y: Double, pirate: Bool, hit: Bool = false, type: PirateType = .gunner) {
     c.saveGState()
     c.translateBy(x: x, y: y)
     if pirate {
       c.rotate(by: .pi)
+      if type == .captain { c.scaleBy(x: 1.12, y: 1.12) }
       oval(c, -6, -6, 32, 50, Ink.outline, alpha: 0.28)
     }
     let hull = [0.0, -58, -30, -24, -32, 27, -21, 49, 21, 49, 32, 27, 30, -24]
@@ -305,8 +367,16 @@ final class WaterView: UIView {
     }
     if pirate {
       // Black sail with a skull, red trim.
-      polygon(c, [-26, -22, 26, -22, 22, 14, 0, 7, -22, 14], "22292E", outline: 3)
+      polygon(c, [-26, -22, 26, -22, 22, 14, 0, 7, -22, 14], type.stats.color, outline: 3)
       line(c, -24, -20, 24, -20, "D9483B", 4)
+      if type == .scatter || type == .burst {
+        for x in [-19.0, 19.0] { line(c, x, -31, x, -59, "29343B", 8) }
+      }
+      if type == .sniper { line(c, 0, -40, 0, -77, "29343B", 8) }
+      if type == .rammer { polygon(c, [-18, -40, 0, -77, 18, -40], "C9C3A7", outline: 2) }
+      if type == .ironclad { for x in [-27.0, 27.0] { line(c, x, -26, x, 30, "9AB6C3", 7) } }
+      if type == .minelayer { for x in [-20.0, 20.0] { oval(c, x, 34, 8, 9, "354E3C"); line(c, x - 5, 34, x + 5, 34, "C4D6A3", 2) } }
+      if type == .captain { polygon(c, [-12, 30, -12, 42, -5, 36, 0, 46, 5, 36, 12, 42, 12, 30], "F3C75F", outline: 1) }
       // The pirate frame is rotated 180°, so "up" on screen is +y here.
       line(c, -9, -16, 9, -10, "FFF6E0", 2.5)
       line(c, 9, -16, -9, -10, "FFF6E0", 2.5)
@@ -374,6 +444,8 @@ final class WaterView: UIView {
     })
     .min(by: { hypot($0.x - x, $0.y - y) < hypot($1.x - x, $1.y - y) }) {
       game.fire(target: target)
+    } else if let mine = game.bullets.first(where: { $0.mine && !$0.dead && abs($0.x - x) < 30 && abs($0.y - y) < 30 }) {
+      game.fireAt(targetX: mine.x, targetY: mine.y)
     }
   }
 }
