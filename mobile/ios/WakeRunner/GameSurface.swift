@@ -4,9 +4,11 @@ import UIKit
 struct GameSurface: UIViewRepresentable {
   let game: Game
   let frame: Int
+  var contentInsets: UIEdgeInsets = .zero
   @Environment(\.accessibilityReduceMotion) private var reducedMotion
   func makeUIView(context: Context) -> WaterView { WaterView(game: game) }
   func updateUIView(_ view: WaterView, context: Context) {
+    view.contentInsets = contentInsets
     view.reducedMotion = reducedMotion
     view.setNeedsDisplay()
   }
@@ -15,6 +17,7 @@ struct GameSurface: UIViewRepresentable {
 final class WaterView: UIView {
   let game: Game
   var reducedMotion = false
+  var contentInsets = UIEdgeInsets.zero
   private var worldScale = 1.0
   private var offsetX = 0.0
   private var offsetY = 0.0
@@ -36,18 +39,23 @@ final class WaterView: UIView {
     guard let c = UIGraphicsGetCurrentContext() else { return }
     UIColor(hex: "277F89").setFill()
     c.fill(bounds)
-    worldScale = min(bounds.width / 620, bounds.height / 800)
-    offsetX = (bounds.width - 800 * worldScale) / 2
-    offsetY = (bounds.height - 800 * worldScale) / 2
-    c.saveGState()
-    c.translateBy(x: offsetX, y: offsetY)
-    c.scaleBy(x: worldScale, y: worldScale)
     let colors = [UIColor(hex: "318E94").cgColor, UIColor(hex: "1F6F7C").cgColor] as CFArray
     if let gradient = CGGradient(
       colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1])
     {
-      c.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 800, y: 800), options: [])
+      c.drawLinearGradient(
+        gradient, start: .zero, end: CGPoint(x: bounds.width, y: bounds.height), options: [])
     }
+    let viewport = bounds.inset(by: contentInsets)
+    guard viewport.width > 0, viewport.height > 0 else { return }
+    worldScale = min(viewport.width / 620, viewport.height / 800)
+    offsetX = viewport.midX - 400 * worldScale
+    offsetY = viewport.midY - 400 * worldScale
+    c.saveGState()
+    c.clip(to: viewport)
+    c.saveGState()
+    c.translateBy(x: offsetX, y: offsetY)
+    c.scaleBy(x: worldScale, y: worldScale)
     let scroll = reducedMotion ? 0 : game.scroll
     for i in 0...75 {
       let x = Double(i * 137 % 800)
@@ -96,6 +104,7 @@ final class WaterView: UIView {
       if game.invincible == 0 || Int(game.elapsed * 12) % 2 == 0 { boat(c, 0, 0, pirate: false) }
       c.restoreGState()
     }
+    c.restoreGState()
     c.restoreGState()
   }
   private func oval(

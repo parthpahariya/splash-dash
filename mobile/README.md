@@ -9,6 +9,8 @@ Two independent native apps port the browser game's four-lane simulation:
 
 Both apps run entirely offline. They include steering buttons and swipes, held cannon fire, tap-to-target pirate shots, jumps, hearts and jump boosts, increasing difficulty, pause/resume, optional sound (off initially), and a best score stored on the device. The app pauses when backgrounded and waits for an explicit resume. Portrait and landscape are supported; steering buttons provide an alternative to swiping.
 
+The game uses a full-screen ocean with a compact score, health bar, level, and pause HUD. Circular steering controls sit under the left thumb; Jump and a larger held-Fire button sit under the right thumb. Gameplay is inset away from these controls, the camera housing, and the home indicator. In landscape, the playfield sits between the two control groups. Sound, help, and personal bests live in the start/pause/results menu; event messages appear briefly during play. Native press feedback includes haptics, subject to device settings. iOS caps HUD text at XXXL to keep gameplay usable, while menus and help follow the full Dynamic Type range.
+
 ## Android
 
 Open `android/` in Android Studio. Install Android SDK Platform 35 and Build Tools 35.0.0, select **JDK 17** as the Gradle JDK, then run the `app` configuration on an emulator or connected device. The checked-in Gradle wrapper supplies Gradle 8.11.1.

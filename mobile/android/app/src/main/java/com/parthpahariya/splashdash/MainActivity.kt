@@ -4,6 +4,9 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.res.Configuration
 import android.graphics.Color
+import android.graphics.Rect
+import android.content.res.ColorStateList
+import android.graphics.drawable.RippleDrawable
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioManager
@@ -26,6 +29,11 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
     private var lastStatus: Status? = null
     private lateinit var water: GameView
     private lateinit var stats: TextView
+    private lateinit var healthText: TextView
+    private lateinit var healthBar: ProgressBar
+    private lateinit var levelText: TextView
+    private lateinit var hud: LinearLayout
+    private lateinit var controls: FrameLayout
     private lateinit var notice: TextView
     private lateinit var overlay: FrameLayout
     private lateinit var overlayTitle: TextView
@@ -59,7 +67,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
                 else -> null
             }
             if (message != null && ::notice.isInitialized) {
-                notice.text = message; noticeUntil = System.currentTimeMillis() + 1600
+                notice.text = message; notice.visibility = View.VISIBLE; noticeUntil = System.currentTimeMillis() + 1600
                 if (event == "damage" || event == "sink") notice.announceForAccessibility(message)
             }
             if (sound && event in listOf("fire", "damage", "heart", "jump", "sink")) {
@@ -84,106 +92,170 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         setOnClickListener { action() }
     }
     private fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-    private fun addControl(row: LinearLayout, view: View, weight: Float = 1f) {
-        row.addView(view, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, weight).apply { setMargins(dp(4), 0, dp(4), 0) })
+    private fun panel(color: Int, radius: Int = 20) = GradientDrawable().apply {
+        setColor(color); cornerRadius = dp(radius).toFloat()
+    }
+    private fun thumbButton(title: String, symbol: String, primary: Boolean = false, action: () -> Unit): Button {
+        return button(title, primary, action).apply {
+            textSize = 12f; gravity = Gravity.CENTER; setTypeface(null, Typeface.BOLD)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            val shape = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(if (primary) gold else Color.rgb(25, 62, 72))
+                setStroke(dp(2), if (primary) gold else Color.rgb(120, 155, 158))
+            }
+            backgroundTintList = null
+            background = RippleDrawable(ColorStateList.valueOf(Color.argb(90, 248, 238, 214)), shape, null)
+            val iconSize = dp(if (symbol == "jump") 20 else 24)
+            val icon = ControlIcon(symbol, if (primary) ink else cream).apply { setBounds(0, 0, iconSize, iconSize) }
+            if (title.isEmpty()) { textSize = 0f; includeFontPadding = false }
+            setCompoundDrawables(null, icon, null, null)
+            setOnClickListener {
+                if (!primary) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                action()
+            }
+            compoundDrawablePadding = dp(2)
+        }
     }
     private fun buildUI() {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; setBackgroundColor(ink)
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-        }
+        val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val sideInset = if (landscape) dp(160) else 0
+        val bottomInset = if (landscape) dp(16) else dp(112)
+        val root = FrameLayout(this).apply { setBackgroundColor(Color.rgb(39, 127, 137)) }
         if (android.os.Build.VERSION.SDK_INT >= 30) {
             window.setDecorFitsSystemWindows(false)
+            window.insetsController?.let {
+                it.hide(WindowInsets.Type.statusBars())
+                it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
         } else {
             @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_FULLSCREEN
         }
-        root.setOnApplyWindowInsetsListener { v, insets ->
-            if (android.os.Build.VERSION.SDK_INT >= 30) {
-                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-                v.setPadding(dp(12) + bars.left, dp(8) + bars.top, dp(12) + bars.right, dp(8) + bars.bottom)
-            } else {
-                @Suppress("DEPRECATION")
-                v.setPadding(dp(12) + insets.systemWindowInsetLeft, dp(8) + insets.systemWindowInsetTop, dp(12) + insets.systemWindowInsetRight, dp(8) + insets.systemWindowInsetBottom)
-            }
-            insets
-        }
-        val header = row()
-        header.addView(label(19f).apply { text = "WAKE RUNNER"; setTypeface(null, Typeface.BOLD) }, LinearLayout.LayoutParams(0, -2, 1f))
-        soundButton = button(if (sound) "Sound on" else "Sound off") {
-            sound = !sound; prefs.edit().putBoolean("sound", sound).apply()
-            soundButton.text = if (sound) "Sound on" else "Sound off"
-            soundButton.contentDescription = "Sound ${if (sound) "on" else "off"}"
-        }
-        header.addView(soundButton)
-        header.addView(button("Help") { showHelp() })
-        root.addView(header)
-        stats = label(14f).apply { typeface = Typeface.MONOSPACE }
-        root.addView(stats)
-        val body = LinearLayout(this).apply { orientation = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL }
-        root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
-        val field = FrameLayout(this)
         water = GameView(this, game).apply {
             reducedMotion = Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
-            background = GradientDrawable().apply { setColor(Color.rgb(39, 127, 137)); cornerRadius = dp(16).toFloat() }
-            outlineProvider = ViewOutlineProvider.BACKGROUND
         }
-        field.addView(water, FrameLayout.LayoutParams(-1, -1))
-        overlay = FrameLayout(this).apply { setBackgroundColor(Color.argb(220, 16, 44, 52)) }
-        val scroller = ScrollView(this).apply { isFillViewport = true }
-        val center = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(24), dp(16), dp(24), dp(16)) }
-        overlayTitle = label(32f).apply {
-            setTypeface(null, Typeface.BOLD); gravity = Gravity.CENTER
-            if (android.os.Build.VERSION.SDK_INT >= 28) setAccessibilityHeading(true)
+        root.addView(water, FrameLayout.LayoutParams(-1, -1))
+        val safe = FrameLayout(this)
+        root.addView(safe, FrameLayout.LayoutParams(-1, -1))
+
+        hud = row().apply {
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = panel(Color.argb(240, 16, 44, 52))
+            gravity = Gravity.TOP
         }
-        overlayCopy = label(16f).apply { gravity = Gravity.CENTER; setPadding(0, dp(12), 0, dp(20)) }
-        startButton = button("Set sail", true) { if (game.status == Status.PAUSED) game.pause() else game.reset(); updateHUD() }
-        center.addView(overlayTitle); center.addView(overlayCopy)
-        center.addView(startButton, LinearLayout.LayoutParams(-1, -2))
-        scroller.addView(center); overlay.addView(scroller); field.addView(overlay)
-        val controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        notice = label(13f, gold).apply { text = "Swipe to steer · tap a pirate to aim"; gravity = Gravity.CENTER }
-        controls.addView(notice)
-        val steering = row()
-        leftButton = button("Left") { game.move(-1) }.apply { contentDescription = "Steer left" }
-        rightButton = button("Right") { game.move(1) }.apply { contentDescription = "Steer right" }
-        addControl(steering, leftButton); addControl(steering, rightButton)
-        controls.addView(steering)
-        val actions = row()
-        fireButton = button("Fire", true) { if (!fireTouch) game.fire(); fireTouch = false }.apply {
+        val scoreStack = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        scoreStack.addView(label(10f).apply { text = "SCORE"; letterSpacing = .15f; setTypeface(null, Typeface.BOLD) })
+        stats = label(23f).apply { typeface = Typeface.create("sans-serif-condensed", Typeface.BOLD) }
+        scoreStack.addView(stats)
+        val hull = row()
+        healthBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100; progressTintList = ColorStateList.valueOf(Color.rgb(140, 227, 205))
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        hull.addView(healthBar, LinearLayout.LayoutParams(dp(64), dp(10)))
+        healthText = label(12f, Color.rgb(140, 227, 205)).apply { setTypeface(null, Typeface.BOLD) }
+        hull.addView(healthText); scoreStack.addView(hull)
+        hud.addView(scoreStack, LinearLayout.LayoutParams(0, -2, 1f))
+        levelText = label(11f, gold).apply { setTypeface(null, Typeface.BOLD); setPadding(dp(8), dp(8), dp(8), dp(8)) }
+        hud.addView(levelText)
+        pauseButton = thumbButton("", "pause") { game.pause(); updateHUD() }.apply { contentDescription = "Pause" }
+        hud.addView(pauseButton, LinearLayout.LayoutParams(dp(48), dp(48)))
+        safe.addView(hud, FrameLayout.LayoutParams(-1, -2, Gravity.TOP).apply { setMargins(dp(12), dp(8), dp(12), 0) })
+
+        notice = label(14f, gold).apply {
+            text = ""; visibility = View.GONE; gravity = Gravity.CENTER
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            background = panel(Color.argb(245, 16, 44, 52))
+        }
+        safe.addView(notice, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(112) })
+        controls = FrameLayout(this)
+        val steering = row().apply { gravity = Gravity.BOTTOM }
+        leftButton = thumbButton("", "left") { game.move(-1) }.apply { contentDescription = "Steer left" }
+        rightButton = thumbButton("", "right") { game.move(1) }.apply { contentDescription = "Steer right" }
+        steering.addView(leftButton, LinearLayout.LayoutParams(dp(56), dp(56)))
+        steering.addView(rightButton, LinearLayout.LayoutParams(dp(56), dp(56)).apply { leftMargin = dp(8) })
+        controls.addView(steering, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.LEFT))
+        val actions = row().apply { gravity = Gravity.BOTTOM }
+        jumpButton = thumbButton("2", "jump") { game.jump(); updateHUD() }.apply { contentDescription = "Jump (2)" }
+        fireButton = thumbButton("FIRE", "fire", true) { if (!fireTouch) game.fire(); fireTouch = false }.apply {
             contentDescription = "Fire cannon. Hold for continuous fire."
             setOnTouchListener { _, e ->
                 when (e.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { fireTouch = true; game.firing = true; game.fire() }
+                    MotionEvent.ACTION_DOWN -> { performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY); fireTouch = true; game.firing = true; game.fire() }
                     MotionEvent.ACTION_UP -> game.firing = false
                     MotionEvent.ACTION_CANCEL -> { game.firing = false; fireTouch = false }
                 }
                 false
             }
         }
-        jumpButton = button("Jump") { game.jump(); updateHUD() }
-        pauseButton = button("Pause") { game.pause(); updateHUD() }
-        addControl(actions, fireButton); addControl(actions, jumpButton); addControl(actions, pauseButton)
-        controls.addView(actions)
-        if (body.orientation == LinearLayout.HORIZONTAL) {
-            body.addView(field, LinearLayout.LayoutParams(0, -1, 1f))
-            val controlScroll = ScrollView(this).apply { addView(controls); isFillViewport = true }
-            body.addView(controlScroll, LinearLayout.LayoutParams(dp(240), -1))
-            controls.gravity = Gravity.CENTER
-        } else {
-            body.addView(field, LinearLayout.LayoutParams(-1, 0, 1f))
-            body.addView(controls, LinearLayout.LayoutParams(-1, -2))
+        actions.addView(jumpButton, LinearLayout.LayoutParams(dp(56), dp(56)))
+        actions.addView(fireButton, LinearLayout.LayoutParams(dp(76), dp(76)).apply { leftMargin = dp(12) })
+        controls.addView(actions, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.RIGHT))
+        safe.addView(controls, FrameLayout.LayoutParams(-1, dp(88), Gravity.BOTTOM).apply { setMargins(dp(16), 0, dp(16), dp(12)) })
+
+        overlay = FrameLayout(this).apply { setBackgroundColor(Color.argb(235, 16, 44, 52)) }
+        val scroller = ScrollView(this).apply { isFillViewport = true }
+        val center = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(24), dp(24), dp(24), dp(24)) }
+        overlayTitle = label(40f).apply {
+            setTypeface(null, Typeface.BOLD); gravity = Gravity.CENTER
+            if (android.os.Build.VERSION.SDK_INT >= 28) setAccessibilityHeading(true)
+        }
+        overlayCopy = label(16f).apply { gravity = Gravity.CENTER; setPadding(0, dp(16), 0, dp(24)) }
+        startButton = button("Set sail", true) { if (game.status == Status.PAUSED) game.pause() else game.reset(); updateHUD() }
+        center.addView(overlayTitle); center.addView(overlayCopy)
+        center.addView(startButton, LinearLayout.LayoutParams(-1, dp(56)))
+        val options = row()
+        soundButton = button(if (sound) "Sound on" else "Sound off") {
+            sound = !sound; prefs.edit().putBoolean("sound", sound).apply()
+            soundButton.text = if (sound) "Sound on" else "Sound off"
+        }
+        options.addView(soundButton, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(8) })
+        options.addView(button("How to play") { showHelp() }, LinearLayout.LayoutParams(0, -2, 1f))
+        center.addView(options, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+        center.addView(label(13f, gold).apply { text = "Swipe to steer · hold Fire to shoot\nTap a pirate to aim · Jump to evade"; gravity = Gravity.CENTER })
+        scroller.addView(center); overlay.addView(scroller); root.addView(overlay)
+        var safeTop = 0
+        hud.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
+            if (bottom > top) {
+                water.contentInsets.top = safeTop + bottom - top + dp(16)
+                water.invalidate()
+            }
+        }
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            val bars = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                val i = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                Rect(i.left, i.top, i.right, i.bottom)
+            } else {
+                @Suppress("DEPRECATION")
+                Rect(insets.systemWindowInsetLeft, insets.systemWindowInsetTop, insets.systemWindowInsetRight, insets.systemWindowInsetBottom)
+            }
+            safeTop = bars.top
+            safe.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            overlay.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            water.contentInsets = Rect(bars.left + sideInset, bars.top + dp(104), bars.right + sideInset, bars.bottom + bottomInset)
+            water.invalidate()
+            insets
         }
         setContentView(root); root.requestApplyInsets(); lastStatus = null; updateHUD()
     }
     private fun updateHUD() {
-        stats.text = "Score %06d  ·  Best %d\nHull %d%%  ·  Jumps %d  ·  Level %d".format(game.score, best, game.health, game.jumps, game.level)
+        stats.text = "%,d".format(game.score)
+        stats.contentDescription = "Score ${game.score}"
+        healthText.text = "${game.health}%"
+        healthText.contentDescription = "Hull ${game.health} percent"
+        healthBar.progress = game.health
+        healthBar.progressTintList = ColorStateList.valueOf(if (game.health <= 25) Color.rgb(255, 160, 180) else Color.rgb(140, 227, 205))
+        levelText.text = "LEVEL ${game.level}"
         val playing = game.status == Status.PLAYING
         leftButton.isEnabled = playing; rightButton.isEnabled = playing; fireButton.isEnabled = playing
         jumpButton.isEnabled = playing && game.jumps > 0 && !game.jumping
-        jumpButton.text = "Jump (${game.jumps})"
+        jumpButton.text = "${game.jumps}"
+        jumpButton.contentDescription = "Jump (${game.jumps})"
         pauseButton.isEnabled = playing || game.status == Status.PAUSED
-        pauseButton.text = if (game.status == Status.PAUSED) "Resume" else "Pause"
+        hud.visibility = if (playing) View.VISIBLE else View.GONE
+        controls.visibility = if (playing) View.VISIBLE else View.GONE
+        if (!playing) notice.visibility = View.GONE
         for (button in listOf(leftButton, rightButton, fireButton, jumpButton, pauseButton)) {
             button.alpha = if (button.isEnabled) 1f else .45f
         }
@@ -191,11 +263,11 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         if (lastStatus != game.status) {
             when (game.status) {
                 Status.READY -> {
-                    overlayTitle.text = "A little boat.\nA big adventure."
-                    overlayCopy.text = "Dodge rocks. Sink pirates.\nCollect hearts and jump over danger.\n\nStart with 100 hull and two jumps."
+                    overlayTitle.text = "WAKE\nRUNNER"
+                    overlayCopy.text = "Dodge rocks. Sink pirates.\nMake every voyage count.\n\nPERSONAL BEST  $best"
                     startButton.text = "Set sail"
                 }
-                Status.PAUSED -> { overlayTitle.text = "Take a breather."; overlayCopy.text = "Your voyage is right where you left it."; startButton.text = "Back to the water" }
+                Status.PAUSED -> { overlayTitle.text = "PAUSED"; overlayCopy.text = "Your voyage is right where you left it.\n\nPERSONAL BEST  $best"; startButton.text = "Back to the water" }
                 Status.OVER -> {
                     overlayTitle.text = "What a voyage."
                     overlayCopy.text = "Score ${game.score}\n${game.distance.toInt()} m sailed · ${game.piratesSunk} pirates sunk\nBest $best"
@@ -206,7 +278,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             if (game.status == Status.OVER || game.status == Status.PAUSED) overlayTitle.announceForAccessibility(overlayTitle.text)
             lastStatus = game.status
         }
-        if (noticeUntil != 0L && System.currentTimeMillis() > noticeUntil) { notice.text = "Swipe to steer · tap a pirate to aim"; noticeUntil = 0 }
+        if (noticeUntil != 0L && System.currentTimeMillis() > noticeUntil) { notice.text = ""; notice.visibility = View.GONE; noticeUntil = 0 }
         water.invalidate()
     }
     private fun showHelp() {

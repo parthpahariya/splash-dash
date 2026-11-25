@@ -10,7 +10,7 @@ struct WakeRunnerApp: App {
     WindowGroup {
       GameScreen(model: model)
         .preferredColorScheme(.dark)
-        .onChange(of: scenePhase) { phase in
+        .onChange(of: scenePhase) { _, phase in
           if phase == .active { model.activate() } else { model.deactivate() }
         }
         .onAppear { model.activate() }
@@ -29,7 +29,7 @@ final class GameModel: ObservableObject {
   @Published var frame = 0
   @Published var best = UserDefaults.standard.integer(forKey: "wake-runner-best")
   @Published var sound = UserDefaults.standard.bool(forKey: "wake-runner-sound")
-  @Published var notice = "Swipe to steer · tap a pirate to aim"
+  @Published var notice = ""
   private var noticeUntil = 0.0
   private var displayLink: CADisplayLink?
   private var previous = 0.0
@@ -63,14 +63,14 @@ final class GameModel: ObservableObject {
     previous = now
     game.update(delta)
     if noticeUntil > 0 && now > noticeUntil {
-      notice = "Swipe to steer · tap a pirate to aim"
+      notice = ""
       noticeUntil = 0
     }
     if game.status == .playing { frame &+= 1 }
   }
   func startOrResume() {
     if game.status == .paused { game.pause() } else { game.reset() }
-    notice = "Swipe to steer · tap a pirate to aim"
+    notice = ""
     frame &+= 1
   }
   func pause() {
@@ -100,7 +100,9 @@ final class GameModel: ObservableObject {
       frame &+= 1
     default: break
     }
-    noticeUntil = CACurrentMediaTime() + 1.6
+    if ["damage", "jump", "heart", "pickupJump", "sink", "level"].contains(event) {
+      noticeUntil = CACurrentMediaTime() + 1.6
+    }
     if sound && ["fire", "damage", "heart", "jump", "sink"].contains(event) { playTone(event) }
     if event == "over" {
       UIAccessibility.post(
@@ -150,208 +152,226 @@ final class GameModel: ObservableObject {
 
 private enum Palette {
   static let background = Color(uiColor: UIColor(hex: "102C34"))
-  static let surface = Color(uiColor: UIColor(hex: "284A52"))
+  static let sea = Color(uiColor: UIColor(hex: "277F89"))
+  static let surface = Color(uiColor: UIColor(hex: "193E48"))
   static let cream = Color(uiColor: UIColor(hex: "F8EED6"))
   static let gold = Color(uiColor: UIColor(hex: "F2C982"))
+  static let mint = Color(uiColor: UIColor(hex: "8CE3CD"))
 }
 
 struct GameScreen: View {
   @ObservedObject var model: GameModel
   @State private var help = false
   @Environment(\.dynamicTypeSize) private var typeSize
-  @ScaledMetric(relativeTo: .body) private var fireHeight = 52.0
+
   var body: some View {
     GeometryReader { geometry in
       let landscape = geometry.size.width > geometry.size.height
-      if typeSize.isAccessibilitySize {
-        ScrollView {
-          VStack(spacing: 16) {
-            header
-            stats
-            water.frame(height: max(360, geometry.size.height * 0.7))
-            controls
-          }.padding(16)
-        }
-      } else {
-        VStack(spacing: 8) {
-          header
-          if landscape {
-            HStack(spacing: 16) {
-              water
-              ScrollView {
-                VStack(spacing: 12) {
-                  stats
-                  controls
-                }
-              }.frame(width: min(260, geometry.size.width * 0.38))
+      ZStack {
+        GameSurface(
+          game: model.game, frame: model.frame,
+          contentInsets: UIEdgeInsets(
+            top: geometry.safeAreaInsets.top + (typeSize >= .xxLarge ? 120 : 100),
+            left: geometry.safeAreaInsets.leading + (landscape ? 160 : 0),
+            bottom: geometry.safeAreaInsets.bottom + (landscape ? 16 : 112),
+            right: geometry.safeAreaInsets.trailing + (landscape ? 160 : 0))
+        )
+        .ignoresSafeArea()
+        .accessibilityHidden(model.game.status != .playing)
+        if model.game.status == .playing {
+          VStack(spacing: 0) {
+            hud
+            if !model.notice.isEmpty {
+              Text(model.notice).font(.subheadline.weight(.semibold))
+                .multilineTextAlignment(.center).padding(.horizontal, 16).padding(.vertical, 8)
+                .background(Palette.background.opacity(0.94), in: Capsule())
+                .padding(.top, 12).allowsHitTesting(false)
             }
-          } else {
-            stats
-            water
-            ScrollView { controls }
-              .frame(
-                height: min(typeSize.isAccessibilitySize ? 280 : 200, geometry.size.height * 0.34))
+            Spacer(minLength: 0)
+            controls
           }
+          .padding(.horizontal, landscape ? 24 : 16)
+          .padding(.top, 8).padding(.bottom, 12)
+          // Keep the real-time HUD compact; menus retain the full Dynamic Type range.
+          .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+        } else {
+          menu
         }
-        .padding(16)
-        .frame(maxWidth: 1100)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }
-    .background(Palette.background)
+    .background(Palette.sea.ignoresSafeArea())
     .foregroundStyle(Palette.cream)
+    .statusBarHidden(true)
     .sheet(isPresented: $help) { handbook }
   }
-  private var header: some View {
-    Group {
-      if typeSize.isAccessibilitySize {
-        VStack(alignment: .leading, spacing: 8) {
-          Text("WAKE RUNNER").font(.headline).accessibilityAddTraits(.isHeader)
-            .fixedSize(horizontal: false, vertical: true)
-          headerActions
-        }.frame(maxWidth: .infinity, alignment: .leading)
-      } else {
-        HStack(spacing: 8) {
-          Text("WAKE RUNNER").font(.headline).tracking(1).accessibilityAddTraits(.isHeader)
-            .frame(maxWidth: .infinity, alignment: .leading)
-          headerActions
-        }
+
+  private var hud: some View {
+    HStack(alignment: .top, spacing: 12) {
+      VStack(alignment: .leading, spacing: 4) {
+        Text("SCORE").font(.caption2.weight(.bold)).tracking(2)
+        Text(model.game.score.formatted()).font(.system(.title2, design: .rounded, weight: .heavy))
+          .monospacedDigit().contentTransition(.identity)
+        HStack(spacing: 6) {
+          Image(systemName: "heart.fill").font(.caption).accessibilityHidden(true)
+          ProgressView(value: Double(model.game.health), total: 100)
+            .tint(model.game.health <= 25 ? .pink : Palette.mint).frame(width: 76)
+            .accessibilityHidden(true)
+          Text("\(model.game.health)%").font(.caption.weight(.bold)).monospacedDigit()
+        }.foregroundStyle(Palette.mint)
       }
-    }.buttonStyle(.plain)
-  }
-  private var headerActions: some View {
-    HStack(spacing: 8) {
-      Button {
-        model.toggleSound()
-      } label: {
-        Image(systemName: model.sound ? "speaker.wave.2" : "speaker.slash").frame(
-          minWidth: 44, minHeight: 44)
-      }.accessibilityLabel(model.sound ? "Turn sound off" : "Turn sound on")
-        .accessibilityValue(model.sound ? "On" : "Off")
-      Button {
-        if model.game.status == .playing { model.pause() }
-        help = true
-      } label: {
-        Image(systemName: "questionmark.circle").frame(minWidth: 44, minHeight: 44)
-      }
-      .accessibilityLabel("How to play")
-    }
-  }
-  private var stats: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      if typeSize.isAccessibilitySize {
-        Text("SCORE \(model.game.score.formatted())").fontWeight(.bold)
-        Text("BEST \(model.best.formatted())")
-        Text("Hull \(model.game.health)%").foregroundStyle(Palette.gold)
-        Text("Jumps \(model.game.jumps) · Level \(model.game.level)").foregroundStyle(Palette.gold)
-      } else {
-        HStack {
-          Text("SCORE \(model.game.score.formatted())").fontWeight(.bold)
-          Spacer(minLength: 8)
-          Text("BEST \(model.best.formatted())")
-        }
-        Text(
-          "Hull \(model.game.health)%   ·   Jumps \(model.game.jumps)   ·   Level \(model.game.level)"
-        )
-        .foregroundStyle(Palette.gold)
-      }
-    }
-    .font(.subheadline.monospacedDigit())
-    .fixedSize(horizontal: false, vertical: true)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .accessibilityElement(children: .combine)
-  }
-  private var water: some View {
-    ZStack {
-      GameSurface(game: model.game, frame: model.frame)
-        .accessibilityHidden(model.game.status != .playing)
-      if model.game.status != .playing {
-        Palette.background.opacity(0.9)
-        ScrollView {
-          VStack(spacing: 16) {
-            Text(overlayTitle).font(.largeTitle.bold()).multilineTextAlignment(.center)
-              .accessibilityAddTraits(.isHeader)
-            Text(overlayCopy).font(.body).multilineTextAlignment(.center)
-            Button(action: model.startOrResume) {
-              Text(
-                model.game.status == .paused
-                  ? "Back to the water"
-                  : model.game.status == .over ? "One more voyage" : "Set sail"
-              )
-              .fontWeight(.bold).frame(maxWidth: .infinity, minHeight: 52)
-            }.buttonStyle(SeaButton(primary: true))
-          }.padding(24).frame(maxWidth: 420).frame(maxWidth: .infinity)
-        }.defaultScrollAnchor(.center)
-      }
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .clipShape(RoundedRectangle(cornerRadius: 20))
-  }
-  private var overlayTitle: String {
-    switch model.game.status {
-    case .ready: return "A little boat.\nA big adventure."
-    case .paused: return "Take a breather."
-    case .over: return "What a voyage."
-    default: return ""
-    }
-  }
-  private var overlayCopy: String {
-    switch model.game.status {
-    case .ready:
-      return
-        "Dodge rocks. Sink pirates.\nCollect hearts and jump over danger.\n\nStart with 100 hull and two jumps."
-    case .paused: return "Your voyage is right where you left it."
-    case .over:
-      return
-        "Score \(model.game.score.formatted())\n\(Int(model.game.distance)) m sailed · \(model.game.piratesSunk) pirates sunk\nBest \(model.best.formatted())"
-    default: return ""
-    }
-  }
-  private var controls: some View {
-    VStack(spacing: 8) {
-      Text(model.notice).font(.footnote).multilineTextAlignment(.center).foregroundStyle(
-        Palette.gold)
-      HStack(spacing: 8) {
-        control("Left", icon: "arrow.left") { model.game.move(-1) }.accessibilityLabel("Steer left")
-        control("Right", icon: "arrow.right") { model.game.move(1) }.accessibilityLabel(
-          "Steer right")
-      }.disabled(model.game.status != .playing)
-      HStack(spacing: 8) {
-        HoldFireButton(game: model.game).frame(maxWidth: .infinity).frame(height: fireHeight)
-          .disabled(model.game.status != .playing).opacity(model.game.status == .playing ? 1 : 0.45)
-        control("Jump (\(model.game.jumps))", icon: "arrow.up") { model.game.jump() }
-          .disabled(model.game.status != .playing || model.game.jumps == 0 || model.game.jumping)
-      }
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel("Score \(model.game.score), hull \(model.game.health) percent")
+      Spacer(minLength: 8)
+      Text("LEVEL \(model.game.level)").font(.caption.weight(.heavy)).tracking(1)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(Palette.background.opacity(0.9), in: Capsule())
       Button(action: model.pause) {
-        Label(
-          model.game.status == .paused ? "Resume" : "Pause",
-          systemImage: model.game.status == .paused ? "play" : "pause"
-        )
-        .frame(maxWidth: .infinity, minHeight: 44)
-      }.buttonStyle(SeaButton()).disabled(model.game.status == .ready || model.game.status == .over)
+        Image(systemName: "pause.fill").font(.title3.weight(.bold)).frame(width: 48, height: 48)
+      }.buttonStyle(GameControlStyle()).accessibilityLabel("Pause")
+    }
+    .padding(12)
+    .background(Palette.background.opacity(0.92), in: RoundedRectangle(cornerRadius: 20))
+  }
+
+  private var controls: some View {
+    HStack(alignment: .bottom, spacing: 12) {
+      HStack(spacing: 8) {
+        Button {
+          steer(-1)
+        } label: {
+          Image(systemName: "chevron.left").font(.title2.weight(.heavy)).frame(
+            width: 56, height: 56)
+        }.accessibilityLabel("Steer left")
+        Button {
+          steer(1)
+        } label: {
+          Image(systemName: "chevron.right").font(.title2.weight(.heavy)).frame(
+            width: 56, height: 56)
+        }.accessibilityLabel("Steer right")
+      }.buttonStyle(GameControlStyle())
+      Spacer(minLength: 0)
+      HStack(alignment: .bottom, spacing: 12) {
+        Button {
+          if model.game.jump() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+        } label: {
+          VStack(spacing: 2) {
+            Image(systemName: "arrow.up").font(.title3.weight(.heavy))
+            Text("\(model.game.jumps)").font(.caption.weight(.bold)).monospacedDigit()
+          }.frame(width: 56, height: 56)
+        }.buttonStyle(GameControlStyle())
+          .accessibilityLabel("Jump (\(model.game.jumps))")
+          .accessibilityHint("Jump over hazards. \(model.game.jumps) charges remaining.")
+          .disabled(model.game.jumps == 0 || model.game.jumping)
+        HoldFireButton(game: model.game).frame(width: 76, height: 76)
+      }
+    }
+    .frame(maxWidth: 760).frame(maxWidth: .infinity)
+    .accessibilityIdentifier("game-controls")
+  }
+
+  private func steer(_ direction: Int) {
+    let lane = model.game.lane
+    model.game.move(direction)
+    if model.game.lane != lane { UISelectionFeedbackGenerator().selectionChanged() }
+  }
+
+  private var menu: some View {
+    ZStack {
+      Palette.background.opacity(0.9).ignoresSafeArea()
+      ScrollView {
+        VStack(spacing: 20) {
+          Text(
+            model.game.status == .ready
+              ? "THE OPEN WATER IS CALLING"
+              : model.game.status == .paused ? "TAKE A BREATHER" : "VOYAGE COMPLETE"
+          )
+          .font(.caption.weight(.bold)).tracking(2).foregroundStyle(Palette.gold)
+          Text(
+            model.game.status == .ready
+              ? "WAKE\nRUNNER" : model.game.status == .paused ? "PAUSED" : "WHAT A\nVOYAGE."
+          )
+          .font(.system(.largeTitle, design: .rounded, weight: .heavy))
+          .multilineTextAlignment(.center).accessibilityAddTraits(.isHeader)
+          if model.game.status == .over {
+            Text(model.game.score.formatted()).font(
+              .system(.largeTitle, design: .rounded, weight: .heavy)
+            ).foregroundStyle(Palette.gold)
+            Text("\(Int(model.game.distance)) m sailed · \(model.game.piratesSunk) pirates sunk")
+              .font(.subheadline)
+          } else if model.game.status == .ready {
+            Text("Dodge rocks. Sink pirates.\nMake every voyage count.").multilineTextAlignment(
+              .center)
+          }
+          Text("PERSONAL BEST  \(model.best.formatted())").font(
+            .subheadline.monospacedDigit().weight(.semibold)
+          ).foregroundStyle(Palette.gold)
+          Button(action: model.startOrResume) {
+            Label(
+              model.game.status == .paused
+                ? "Back to the water" : model.game.status == .over ? "One more voyage" : "Set sail",
+              systemImage: "play.fill"
+            )
+            .font(.headline).frame(maxWidth: .infinity, minHeight: 56)
+          }.buttonStyle(MenuButtonStyle())
+          Group {
+            if typeSize.isAccessibilitySize {
+              VStack(spacing: 12) {
+                soundOption
+                helpOption
+              }
+            } else {
+              HStack(spacing: 12) {
+                soundOption
+                helpOption
+              }
+            }
+          }.buttonStyle(MenuButtonStyle(primary: false))
+          if model.game.status == .ready {
+            Text("Swipe to steer · hold Fire to shoot\nTap a pirate to aim · Jump to evade")
+              .font(.footnote).multilineTextAlignment(.center)
+          }
+        }.padding(24).frame(maxWidth: 440).frame(maxWidth: .infinity)
+      }.defaultScrollAnchor(.center)
+    }.accessibilityIdentifier("game-menu")
+  }
+
+  private var soundOption: some View {
+    Button {
+      model.toggleSound()
+    } label: {
+      Label(
+        model.sound ? "Sound on" : "Sound off",
+        systemImage: model.sound ? "speaker.wave.2" : "speaker.slash"
+      )
+      .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, minHeight: 48)
+    }.accessibilityLabel(model.sound ? "Turn sound off" : "Turn sound on")
+      .accessibilityValue(model.sound ? "On" : "Off")
+  }
+  private var helpOption: some View {
+    Button {
+      help = true
+    } label: {
+      Label("How to play", systemImage: "questionmark.circle")
+        .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, minHeight: 48)
     }
   }
-  private func control(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
-    Button(action: action) {
-      Label(title, systemImage: icon).frame(maxWidth: .infinity, minHeight: 48)
-    }.buttonStyle(SeaButton())
-  }
+
   private var handbook: some View {
     NavigationStack {
       ScrollView {
         VStack(alignment: .leading, spacing: 20) {
           Text("Captain’s handbook").font(.largeTitle.bold())
-          Text("Use Left and Right or swipe across the water to steer.")
+          Text("Use the left and right thumb controls or swipe across the water to steer.")
           Text(
             "Hold Fire to shoot ahead. Tap a pirate to aim across lanes. Two hits sink it for 250 points."
           )
           Text(
-            "Jump clears rocks, ships and cannonballs for 1.15 seconds. Blue pickups add a jump, up to five."
+            "Jump clears rocks, ships and cannonballs for 1.15 seconds. The number on Jump shows your remaining charges. Blue pickups add a jump, up to five."
           )
           Text(
             "Hearts repair 25 hull. Rocks cost 25 hull, cannonballs 15, and pirate collisions 30.")
           Text(
-            "Every 300 meters the water gets faster. Sound starts off. Your best score is saved on this device."
+            "Every 300 meters the water gets faster. Pause is at the top right; sound and help are in the pause menu."
           )
         }.padding(24)
       }.background(Palette.background).foregroundStyle(Palette.cream)
@@ -360,14 +380,27 @@ struct GameScreen: View {
   }
 }
 
-private struct SeaButton: ButtonStyle {
-  var primary = false
+private struct GameControlStyle: ButtonStyle {
   @Environment(\.isEnabled) private var enabled
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label.foregroundStyle(Palette.cream)
+      .background(Palette.surface.opacity(0.96), in: Circle())
+      .overlay(
+        Circle().strokeBorder(
+          Palette.cream.opacity(configuration.isPressed ? 0.85 : 0.3), lineWidth: 2)
+      )
+      .shadow(color: .black.opacity(0.2), radius: 5, y: 3)
+      .opacity(enabled ? configuration.isPressed ? 0.7 : 1 : 0.4)
+  }
+}
+
+private struct MenuButtonStyle: ButtonStyle {
+  var primary = true
   func makeBody(configuration: Configuration) -> some View {
     configuration.label.padding(.horizontal, 12)
       .foregroundStyle(primary ? Palette.background : Palette.cream)
-      .background(primary ? Palette.gold : Palette.surface, in: RoundedRectangle(cornerRadius: 12))
-      .opacity(enabled ? configuration.isPressed ? 0.7 : 1 : 0.45)
+      .background(primary ? Palette.gold : Palette.surface, in: RoundedRectangle(cornerRadius: 16))
+      .opacity(configuration.isPressed ? 0.7 : 1)
   }
 }
 
@@ -387,12 +420,20 @@ private final class CannonButton: UIButton {
     self.game = game
     super.init(frame: .zero)
     var config = UIButton.Configuration.filled()
-    config.title = "Fire"
+    config.title = "FIRE"
+    config.image = UIImage(systemName: "scope")
+    config.imagePlacement = .top
+    config.imagePadding = 3
     config.baseBackgroundColor = UIColor(hex: "F2C982")
     config.baseForegroundColor = UIColor(hex: "102C34")
-    config.cornerStyle = .medium
+    config.cornerStyle = .capsule
+    config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+      var attributes = attributes
+      attributes.font = UIFont.systemFont(ofSize: 12, weight: .heavy)
+      return attributes
+    }
     configuration = config
-    titleLabel?.font = UIFont.preferredFont(forTextStyle: .headline)
+    titleLabel?.font = UIFont.systemFont(ofSize: 12, weight: .heavy)
     titleLabel?.adjustsFontForContentSizeCategory = true
     accessibilityLabel = "Fire cannon"
     accessibilityHint = "Hold for continuous fire."
@@ -403,6 +444,7 @@ private final class CannonButton: UIButton {
   }
   required init?(coder: NSCoder) { fatalError("Use init(game:)") }
   @objc private func beginFire() {
+    UIImpactFeedbackGenerator(style: .light).impactOccurred()
     game.firing = true
     game.fire()
   }

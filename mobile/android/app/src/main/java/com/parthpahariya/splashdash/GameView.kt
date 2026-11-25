@@ -11,6 +11,7 @@ class GameView(context: Context, val game: Game) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val shape = Path()
     private val waterGradient = LinearGradient(0f, 0f, 800f, 800f, Color.rgb(49, 142, 148), Color.rgb(31, 111, 124), Shader.TileMode.CLAMP)
+    private val gradientMatrix = Matrix()
     private val laneDashes = DashPathEffect(floatArrayOf(7f, 14f), 0f)
     private var scale = 1f
     private var offsetX = 0f
@@ -20,21 +21,29 @@ class GameView(context: Context, val game: Game) : View(context) {
     private var anchor = 0f
     private var swiped = false
     var reducedMotion = false
+    var contentInsets = Rect()
 
     init {
         contentDescription = "Four-lane waterway. Swipe to steer or tap a pirate to aim. Steering, fire and jump buttons are below."
         isClickable = true
         clipToOutline = true
     }
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        gradientMatrix.setScale(w / 800f, h / 800f)
+        waterGradient.setLocalMatrix(gradientMatrix)
+    }
     override fun onDraw(c: Canvas) {
         super.onDraw(c)
-        c.drawColor(Color.rgb(39, 127, 137))
-        scale = min(width / 620f, height / 800f)
-        offsetX = (width - 800 * scale) / 2
-        offsetY = (height - 800 * scale) / 2
-        c.save(); c.translate(offsetX, offsetY); c.scale(scale, scale)
         paint.shader = waterGradient
-        c.drawRect(0f, 0f, 800f, 800f, paint); paint.shader = null
+        c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+        paint.shader = null
+        val viewport = RectF(contentInsets.left.toFloat(), contentInsets.top.toFloat(), (width-contentInsets.right).toFloat(), (height-contentInsets.bottom).toFloat())
+        if (viewport.width() <= 0 || viewport.height() <= 0) return
+        scale = min(viewport.width() / 620f, viewport.height() / 800f)
+        offsetX = viewport.centerX() - 400 * scale
+        offsetY = viewport.centerY() - 400 * scale
+        c.save(); c.clipRect(viewport); c.translate(offsetX, offsetY); c.scale(scale, scale)
         val scroll = if (reducedMotion) 0.0 else game.scroll
         for (i in 0..75) {
             val x = ((i * 137) % 800).toDouble()

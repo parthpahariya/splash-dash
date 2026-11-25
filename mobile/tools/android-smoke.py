@@ -59,20 +59,16 @@ try:
     run('shell', 'am', 'force-stop', package)
     run('shell', 'am', 'start', '-n', f'{package}/.MainActivity')
     wait_for('Set sail')
-    # Capture native button locations while idle; the changing gameplay HUD
-    # does not provide the idle interval required by uiautomator dump.
-    initial = tree()
-    steering = {label: next(n for n in initial.iter('node') if n.get('content-desc') == label)
-                for label in ['Steer left', 'Steer right']}
     tap('Set sail')
-    tap_node(steering['Steer left'])
-    tap_node(steering['Steer right'])
-    # Jump, then pause before inspecting charge count so time cannot advance.
+    # Gameplay controls are contextual, and a running HUD doesn't stay idle
+    # long enough for uiautomator dump. Use the matching keyboard actions.
+    run('shell', 'input', 'keyevent', 'KEYCODE_DPAD_LEFT')
+    run('shell', 'input', 'keyevent', 'KEYCODE_DPAD_RIGHT')
+    # Jump, then pause and verify the menu replaces the gameplay controls.
     run('shell', 'input', 'keyevent', 'KEYCODE_DPAD_UP')
     run('shell', 'input', 'keyevent', 'KEYCODE_P')
     wait_for('Back to the water')
-    assert 'Jumps 1' in ET.tostring(tree(), encoding='unicode')
-    assert wait_for('Steer left').get('enabled') == 'false'
+    assert find('Steer left') is None
     tap('Back to the water')
     # The activity must release firing and pause when leaving the foreground.
     run('shell', 'input', 'keyevent', 'KEYCODE_HOME')
@@ -80,7 +76,7 @@ try:
     wait_for('Back to the water')
     run('shell', 'settings', 'put', 'system', 'user_rotation', '1')
     wait_for('Back to the water')
-    tap('Help')
+    tap('How to play')
     wait_for('Captain’s handbook')
     tap('Got it')
     wait_for('Back to the water')
