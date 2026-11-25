@@ -71,24 +71,38 @@ final class WaterView: UIView {
     worldScale = min(viewport.width / 620, viewport.height / 800)
     offsetX = viewport.midX - 400 * worldScale
     offsetY = viewport.midY - 400 * worldScale
-    c.saveGState()
-    c.clip(to: viewport)
+    // Insets place gameplay safely; scenery continues beneath the HUD and Fire.
+    // Only the physical screen edges clip drawing.
+    let visibleMinX = -offsetX / worldScale
+    let visibleMinY = -offsetY / worldScale
+    let visibleWidth = bounds.width / worldScale
+    let visibleHeight = bounds.height / worldScale
+    let visibleMaxY = visibleMinY + visibleHeight
     c.saveGState()
     c.translateBy(x: offsetX, y: offsetY)
     c.scaleBy(x: worldScale, y: worldScale)
     let scroll = reducedMotion ? 0 : game.scroll
-    for i in 0...75 {
-      let x = Double(i * 137 % 800)
-      let y = (Double(i * 83) + scroll * 0.65).truncatingRemainder(dividingBy: 840) - 20
+    let rippleCount = max(76, min(240, Int(visibleWidth * visibleHeight / 8400)))
+    for i in 0..<rippleCount {
+      let x = visibleMinX + Double(i * 137).truncatingRemainder(dividingBy: visibleWidth)
+      let y =
+        visibleMinY - 20
+        + (Double(i * 83) + scroll * 0.65)
+        .truncatingRemainder(dividingBy: visibleHeight + 40)
       line(c, x - 9, y, x + 9, y + 1, "65B9B5", 2)
     }
-    for i in -1...2 {
-      let y = Double(i * 480) + (scroll * 0.55).truncatingRemainder(dividingBy: 480)
+    let shorePhase = (scroll * 0.55).truncatingRemainder(dividingBy: 480)
+    let firstIsland = Int(floor((visibleMinY - shorePhase - 400) / 480))
+    let lastIsland = Int(ceil((visibleMaxY - shorePhase + 160) / 480))
+    for i in firstIsland...lastIsland {
+      let y = Double(i * 480) + shorePhase
       island(c, 0, y)
       island(c, 800, y + 240)
     }
     c.setLineDash(phase: 0, lengths: [7, 14])
-    for i in 0...4 { line(c, Double(148 + i * 126), 0, Double(148 + i * 126), 800, "529E9F", 1.5) }
+    for i in 0...4 {
+      line(c, Double(148 + i * 126), visibleMinY, Double(148 + i * 126), visibleMaxY, "529E9F", 1.5)
+    }
     c.setLineDash(phase: 0, lengths: [])
     if game.status == .ready {
       rock(c, 211, 230)
@@ -124,7 +138,6 @@ final class WaterView: UIView {
       if game.invincible == 0 || Int(game.elapsed * 12) % 2 == 0 { boat(c, 0, 0, pirate: false) }
       c.restoreGState()
     }
-    c.restoreGState()
     c.restoreGState()
   }
   private func oval(

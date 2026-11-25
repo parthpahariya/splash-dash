@@ -50,19 +50,30 @@ class GameView(context: Context, val game: Game) : View(context) {
         scale = min(viewport.width() / 620f, viewport.height() / 800f)
         offsetX = viewport.centerX() - 400 * scale
         offsetY = viewport.centerY() - 400 * scale
-        c.save(); c.clipRect(viewport); c.translate(offsetX, offsetY); c.scale(scale, scale)
+        // Insets place gameplay safely; scenery continues beneath the HUD and Fire.
+        // Only the physical screen edges clip drawing.
+        val visibleMinX = -offsetX / scale
+        val visibleMinY = -offsetY / scale
+        val visibleWidth = width / scale
+        val visibleHeight = height / scale
+        val visibleMaxY = visibleMinY + visibleHeight
+        c.save(); c.translate(offsetX, offsetY); c.scale(scale, scale)
         val scroll = if (reducedMotion) 0.0 else game.scroll
-        for (i in 0..75) {
-            val x = ((i * 137) % 800).toDouble()
-            val y = ((i * 83 + scroll * .65) % 840) - 20
+        val rippleCount = max(76, min(240, (visibleWidth * visibleHeight / 8400).toInt()))
+        for (i in 0 until rippleCount) {
+            val x = visibleMinX + (i * 137.0) % visibleWidth
+            val y = visibleMinY - 20 + (i * 83 + scroll * .65) % (visibleHeight + 40)
             line(c, x - 9, y, x + 9, y + 1, "#65B9B5", 2f)
         }
-        for (i in -1..2) {
-            val y = i * 480 + scroll * .55 % 480
+        val shorePhase = scroll * .55 % 480
+        val firstIsland = floor((visibleMinY - shorePhase - 400) / 480).toInt()
+        val lastIsland = ceil((visibleMaxY - shorePhase + 160) / 480).toInt()
+        for (i in firstIsland..lastIsland) {
+            val y = i * 480 + shorePhase
             island(c, 0.0, y); island(c, 800.0, y + 240)
         }
         paint.pathEffect = laneDashes
-        for (i in 0..4) line(c, 148.0 + i * 126, 0.0, 148.0 + i * 126, 800.0, "#529E9F", 1.5f)
+        for (i in 0..4) line(c, 148.0 + i * 126, visibleMinY.toDouble(), 148.0 + i * 126, visibleMaxY.toDouble(), "#529E9F", 1.5f)
         paint.pathEffect = null
         if (game.status == Status.READY) {
             rock(c, 211.0, 230.0); boat(c, 589.0, 170.0, true)
