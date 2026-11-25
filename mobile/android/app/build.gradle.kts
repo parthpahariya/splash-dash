@@ -1,6 +1,6 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 
-// Release signing and store versions come from CI (ci/android.sh); local builds keep the defaults.
+// Release signing and store versions come from CI (.github/scripts/android.sh); local builds keep the defaults.
 val releaseKeystore: String? = providers.environmentVariable("ANDROID_KEYSTORE_PATH").orNull
 fun requiredEnv(name: String): String =
     providers.environmentVariable(name).orNull ?: error("$name is required when ANDROID_KEYSTORE_PATH is set")

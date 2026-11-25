@@ -1,0 +1,43 @@
+# iOS CI/CD only; Android has its own file. Included by .gitlab-ci.yml.
+# Both jobs need a macOS runner with Xcode, registered with the `macos` tag.
+
+# Manual until a macOS runner exists, so branch pipelines are not left pending.
+ios-check:
+  stage: test
+  tags: [macos]
+  timeout: 30m
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: never
+    - changes:
+        - mobile/ios/**/*
+        - .github/scripts/ios.sh
+        - .gitlab/ios.yml
+      when: manual
+      allow_failure: true
+  script:
+    - bash .github/scripts/ios.sh check
+
+# Protected `ios-vX.Y.Z` tags check, archive and sign a release; it is uploaded to
+# App Store Connect only when IOS_PUBLISH_ENABLED is true.
+ios-testflight:
+  stage: deploy
+  needs: []
+  tags: [macos]
+  timeout: 1h
+  interruptible: false
+  environment:
+    name: app-store
+  # Signing uses IOS_DIST_P12_BASE64, IOS_DIST_P12_PASSWORD and IOS_PROFILE_BASE64.
+  # Uploads use an individual ASC_KEY_ID / ASC_KEY_BASE64; no issuer setting is needed.
+  resource_group: app-store
+  variables:
+    RELEASE_TAG: $CI_COMMIT_TAG
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^ios-v/ && $CI_COMMIT_REF_PROTECTED == "true"'
+  script:
+    - bash .github/scripts/ios.sh check
+    - bash .github/scripts/ios.sh release
+  artifacts:
+    paths: [dist/ios/]
+    expire_in: 30 days

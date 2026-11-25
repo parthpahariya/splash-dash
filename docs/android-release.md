@@ -1,7 +1,8 @@
 # Android releases (Google Play)
 
-Android CI/CD is separate from iOS. [ci/android.sh](../ci/android.sh) runs the checks and builds
-releases, called by [.github/workflows/android.yml](../.github/workflows/android.yml).
+Android CI/CD is separate from iOS. [.github/scripts/android.sh](../.github/scripts/android.sh) runs the checks and builds
+releases, called by [.github/workflows/android.yml](../.github/workflows/android.yml) and
+[.gitlab/android.yml](../.gitlab/android.yml).
 
 | Trigger | Result |
 | --- | --- |
@@ -35,8 +36,11 @@ minutes since 2026-01-01 UTC, so every build gets a higher one.
 | `PLAY_RELEASE_STATUS` | Variable | Optional. Leave unset (`draft`) until the first release is published, then `completed` |
 | `PLAY_TRACK` | Variable | Optional: `internal` (default), `alpha`, `beta`, `production` |
 
-Create the `play` environment (**Settings → Environments**), limit its deployment branches to
+**GitHub:** create the `play` environment (**Settings → Environments**), limit its deployment branches to
 `codex/splash-dash-2026-11-25`, and add the secrets there. Add the variables to the environment or the repository.
+
+**GitLab:** protect the `codex/splash-dash-2026-11-25` branch and add the settings as protected variables (mask the
+secrets). The release job runs only on that protected branch, for pushes that change Android files.
 
 ## Running locally
 
@@ -44,7 +48,7 @@ Create the `play` environment (**Settings → Environments**), limit its deploym
 RELEASE_VERSION=1.0.0 \
 ANDROID_KEYSTORE_BASE64="$(base64 -i upload.jks)" \
 ANDROID_KEYSTORE_PASSWORD=… ANDROID_KEY_ALIAS=upload ANDROID_KEY_PASSWORD=… \
-  bash ci/android.sh release
+  bash .github/scripts/android.sh release
 ```
 
 Without `PLAY_PUBLISH_ENABLED=true` nothing is uploaded. `./gradlew :app:bundleRelease` without

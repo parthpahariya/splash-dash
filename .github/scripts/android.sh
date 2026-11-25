@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Android CI/CD: checks and Google Play releases. Kept separate from iOS.
-# Called by .github/workflows/android.yml.
+# Called by .github/workflows/android.yml and .gitlab/android.yml.
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 python=${CI_PYTHON:-python3}
 project=mobile/android
 package=com.boringman.splashdash
@@ -68,7 +68,7 @@ release() {
     chmod 600 "$work/play.json"
     "$python" -m venv "$work/venv"
     "$work/venv/bin/pip" install --quiet 'google-auth[requests]>=2.40,<3'
-    "$work/venv/bin/python" ci/play_upload.py \
+    "$work/venv/bin/python" .github/scripts/play_upload.py \
         --credentials "$work/play.json" \
         --package "$package" \
         --bundle "$out/$name.aab" \
@@ -85,7 +85,7 @@ case "${1:-}" in
         ;;
     release) release ;;
     *)
-        echo 'Usage: bash ci/android.sh {check|release}' >&2
+        echo 'Usage: bash .github/scripts/android.sh {check|release}' >&2
         exit 2
         ;;
 esac

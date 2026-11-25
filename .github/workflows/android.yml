@@ -12,8 +12,8 @@ on:
     branches: [codex/splash-dash-2026-11-25]
     paths:
       - mobile/android/**
-      - ci/android.sh
-      - ci/play_upload.py
+      - .github/scripts/android.sh
+      - .github/scripts/play_upload.py
       - .github/workflows/android.yml
   workflow_dispatch:
     inputs:
@@ -56,7 +56,7 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" != pull_request ]]; then
             echo android=true >> "$GITHUB_OUTPUT"
           elif git diff --name-only "$BASE...$HEAD" \
-              | grep -qE '^(mobile/android/|ci/android\.sh$|ci/play_upload\.py$|\.github/workflows/android\.yml$)'; then
+              | grep -qE '^(mobile/android/|\.github/scripts/android\.sh$|\.github/scripts/play_upload\.py$|\.github/workflows/android\.yml$)'; then
             echo android=true >> "$GITHUB_OUTPUT"
           else
             echo android=false >> "$GITHUB_OUTPUT"
@@ -83,7 +83,7 @@ jobs:
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
       - uses: android-actions/setup-android@v4
-      - run: bash ci/android.sh check
+      - run: bash .github/scripts/android.sh check
       - uses: actions/upload-artifact@v4
         with:
           name: android-debug-apk
@@ -112,7 +112,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - run: bash ci/android.sh release
+      - run: bash .github/scripts/android.sh release
         env:
           RELEASE_VERSION: ${{ inputs.version }}
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

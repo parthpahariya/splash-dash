@@ -1,7 +1,8 @@
 # iOS releases (TestFlight)
 
-iOS CI/CD is separate from Android. [ci/ios.sh](../ci/ios.sh) runs the checks and builds releases,
-called by [.github/workflows/ios.yml](../.github/workflows/ios.yml). It needs macOS with Xcode.
+iOS CI/CD is separate from Android. [.github/scripts/ios.sh](../.github/scripts/ios.sh) runs the checks and builds releases,
+called by [.github/workflows/ios.yml](../.github/workflows/ios.yml) and
+[.gitlab/ios.yml](../.gitlab/ios.yml). Both need macOS with Xcode.
 
 | Trigger | Result |
 | --- | --- |
@@ -41,8 +42,11 @@ The individual App Store Connect API key is used only for uploads and needs no i
 | `ASC_KEY_BASE64` | Secret | `base64 -i ApiKey_XXXXXXXXXX.p8 \| tr -d '\n'`; required only for uploads |
 | `IOS_PUBLISH_ENABLED` | Variable | `true` |
 
-Create the `app-store` environment (**Settings → Environments**), limit it to `ios-v*` tags and the `codex/splash-dash-2026-11-25` branch (for manual runs), and add
+**GitHub:** create the `app-store` environment (**Settings → Environments**), limit it to `ios-v*` tags and the `codex/splash-dash-2026-11-25` branch (for manual runs), and add
 the secrets there. Add the variable to the environment or the repository.
+
+**GitLab:** add them as protected variables scoped to `app-store` (mask the secrets), protect the
+`ios-v*` tag pattern, and register a macOS runner with the `macos` tag.
 
 The script imports the certificate into a temporary keychain and installs the profile for the
 build. It checks the profile's team, bundle ID and expiry, then archives and exports using manual

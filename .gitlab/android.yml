@@ -1,0 +1,52 @@
+# Android CI/CD only; iOS has its own file. Included by .gitlab-ci.yml.
+
+android-check:
+  stage: test
+  image: ghcr.io/cirruslabs/android-sdk:35
+  timeout: 30m
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == $RELEASE_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+      when: never
+    - changes:
+        - mobile/android/**/*
+        - .github/scripts/android.sh
+        - .github/scripts/play_upload.py
+        - .gitlab/android.yml
+  script:
+    - bash .github/scripts/android.sh check
+  artifacts:
+    paths: [mobile/android/app/build/outputs/apk/debug/]
+    expire_in: 7 days
+
+# Pushes to the protected release branch that touch Android files build a signed
+# release; it is uploaded to Google Play only when PLAY_PUBLISH_ENABLED is true.
+android-play:
+  stage: deploy
+  # Tests and packages the release build in one Gradle run, so it need not wait for android-check.
+  needs: []
+  image: ghcr.io/cirruslabs/android-sdk:35
+  timeout: 45m
+  interruptible: false
+  environment:
+    name: play
+  resource_group: play
+  variables:
+    # Project CI/CD variables of the same names override these defaults.
+    PLAY_TRACK: internal
+    PLAY_RELEASE_STATUS: draft
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $RELEASE_BRANCH && $CI_COMMIT_REF_PROTECTED == "true" && ($CI_PIPELINE_SOURCE == "push" || $CI_PIPELINE_SOURCE == "web")'
+      changes:
+        - mobile/android/**/*
+        - .github/scripts/android.sh
+        - .github/scripts/play_upload.py
+        - .gitlab/android.yml
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends python3 python3-venv && rm -rf /var/lib/apt/lists/*
+  script:
+    - bash .github/scripts/android.sh release
+  artifacts:
+    paths: [dist/android/]
+    expire_in: 30 days
