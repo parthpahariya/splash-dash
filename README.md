@@ -2,6 +2,8 @@
 
 A responsive, top-down four-lane boat arcade game, built with Canvas 2D and vanilla JavaScript. No runtime dependencies.
 
+Native mobile editions are in [`mobile/`](mobile/README.md): **Kotlin for Android** and **Swift for iPhone and iPad**, with offline gameplay, touch controls, and platform-specific build instructions.
+
 ## Run locally
 
 Requires Node.js 20 or later.

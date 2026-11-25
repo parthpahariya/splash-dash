@@ -1,0 +1,62 @@
+# Wake Runner for Android and iOS
+
+Two independent native apps port the browser game's four-lane simulation:
+
+| Platform | Language and UI | Minimum version | Project |
+| --- | --- | --- | --- |
+| Android | Kotlin, Android Views and Canvas | Android 8.0 / API 26 | `android/` |
+| iPhone and iPad | Swift, SwiftUI and Core Graphics | iOS / iPadOS 17 | `ios/WakeRunner.xcodeproj` |
+
+Both apps run entirely offline. They include steering buttons and swipes, held cannon fire, tap-to-target pirate shots, jumps, hearts and jump boosts, increasing difficulty, pause/resume, optional sound (off initially), and a best score stored on the device. The app pauses when backgrounded and waits for an explicit resume. Portrait and landscape are supported; steering buttons provide an alternative to swiping.
+
+## Android
+
+Open `android/` in Android Studio. Install Android SDK Platform 35 and Build Tools 35.0.0, select **JDK 17** as the Gradle JDK, then run the `app` configuration on an emulator or connected device. The checked-in Gradle wrapper supplies Gradle 8.11.1.
+
+From a terminal with JDK 17 on `JAVA_HOME` and the SDK on `ANDROID_HOME` (or `sdk.dir` in `android/local.properties`):
+
+```sh
+cd mobile/android
+./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+With the app installed and the emulator/device unlocked, run `python3 mobile/tools/android-smoke.py` from the repository root for an Android interaction smoke test. Use a dedicated test device; it starts a fresh run, temporarily changes orientation, and restores the original orientation settings afterward.
+
+The debug APK can be installed directly on an Android phone after allowing installs from the source used to open it. It is signed with the local debug key. For store distribution, create your own release signing configuration in Android Studio and use **Generate Signed App Bundle / APK**. No signing keys are committed.
+
+## iOS
+
+Open `ios/WakeRunner.xcodeproj` in Xcode 15 or later. Choose the **WakeRunner** scheme and an iPhone or iPad simulator, then press Run. There are no third-party packages to install.
+
+To run on a physical device, select your Apple development team under **Signing & Capabilities** for WakeRunner, connect the device, and press Run. Change the bundle ID if your team needs a unique identifier. A simulator build is not an installable iPhone IPA; device installs and TestFlight/App Store distribution require Apple signing and provisioning.
+
+Build for a simulator without a signing account:
+
+```sh
+xcodebuild -project mobile/ios/WakeRunner.xcodeproj \
+  -scheme WakeRunner -configuration Debug -sdk iphonesimulator \
+  -derivedDataPath mobile/ios/build CODE_SIGNING_ALLOWED=NO build
+```
+
+Run the pure Swift gameplay tests on macOS:
+
+```sh
+swift test --package-path mobile/ios
+```
+
+Run the iOS interaction tests (replace the destination with an installed simulator from `xcrun simctl list devices available`):
+
+```sh
+xcodebuild -project mobile/ios/WakeRunner.xcodeproj \
+  -scheme WakeRunner -destination 'platform=iOS Simulator,name=iPhone 18 Pro' \
+  -derivedDataPath mobile/ios/build CODE_SIGNING_ALLOWED=NO test
+```
+
+For distribution, configure your signing team, choose a device destination, and use **Product → Archive**. The artwork is native vector drawing; the app icon is included and can be regenerated from the repository root with `swift mobile/tools/generate-ios-icon.swift`.
+
+## Gameplay and architecture
+
+`android/app/src/main/java/com/parthpahariya/splashdash/Game.kt` and `ios/WakeRunner/Game.swift` contain platform-independent simulation code. Both use the browser engine's 800-unit coordinate system, collision thresholds, timings, damage, scoring, spawn spacing, and speed curve. Random spawning can differ between platforms. Platform renderers supply artwork, touch input, and native UI; Android uses Choreographer and iOS uses CADisplayLink for frame timing. Cosmetic effects and audio differ from the browser version.
+
+Each native engine has 12 tests covering steering, damage grace and jump protection, pickups and caps, two-hit sinking, targeted fire, aimed enemy shots, airborne cannonball avoidance, pausing, lethal-frame ordering, levels/reset, spawn spacing, and a seeded ten-minute run checking object separation. iOS also has interaction tests for starting, steering, jumping, held fire, pausing, backgrounding, help, and landscape controls. These do not replace playtesting on physical devices or establish that the real-time visual game is fully playable with a screen reader.

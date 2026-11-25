@@ -2,3 +2,17 @@ node_modules/
 dist/
 .DS_Store
 test-results/
+
+# Native mobile build output and machine-specific settings
+**/.gradle/
+**/.kotlin/
+**/__pycache__/
+**/build/
+**/device-build/
+**/.build/
+**/.swiftpm/
+**/local.properties
+**/xcuserdata/
+*.xcuserstate
+*.keystore
+*.jks
