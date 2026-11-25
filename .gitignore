@@ -16,3 +16,4 @@ test-results/
 *.xcuserstate
 *.keystore
 *.jks
+mobile/ios/Config/Local.xcconfig

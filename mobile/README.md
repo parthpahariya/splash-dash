@@ -31,6 +31,23 @@ Open `ios/WakeRunner.xcodeproj` in Xcode 15 or later. Choose the **WakeRunner** 
 
 To run on a physical device, select your Apple development team under **Signing & Capabilities** for WakeRunner, connect the device, and press Run. Change the bundle ID if your team needs a unique identifier. A simulator build is not an installable iPhone IPA; device installs and TestFlight/App Store distribution require Apple signing and provisioning.
 
+Alternatively, deploy to a physical iPhone from the repository root using the same Makefile workflow as `meal-manager` (requires Xcode 15 or later):
+
+```sh
+cp mobile/ios/Config/Local.xcconfig.example mobile/ios/Config/Local.xcconfig
+# Set DEVELOPMENT_TEAM in Local.xcconfig to your Apple Developer team ID.
+make ios-devices
+make ios-device
+```
+
+Sign in to your Apple account in Xcode, connect and unlock the iPhone, and enable Developer Mode on the phone. `make ios-device` selects the first available paired physical iPhone, builds a signed debug app, installs it, and relaunches it. It does not start a simulator. Your signing config stays local and is ignored by Git.
+
+Use `make ios-device IOS_DEVICE=<UDID>` to select a particular phone. You can also override `IOS_BUNDLE_ID` (if your team needs a unique app ID), `IOS_DERIVED_DATA`, or `IOS_CONFIG`. For example:
+
+```sh
+make ios-device IOS_DEVICE=<UDID> IOS_BUNDLE_ID=com.example.wakerunner
+```
+
 Build for a simulator without a signing account:
 
 ```sh
