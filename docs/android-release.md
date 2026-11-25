@@ -14,6 +14,11 @@ The version name is `versionName` in `mobile/android/app/build.gradle.kts`, unle
 supplies one. Bump it there for a new user-visible version. The version code is the number of
 minutes since 2026-01-01 UTC, so every build gets a higher one.
 
+Android requires **Android 7.0 / API 24** or newer. Keep `minSdk` at least 24 in
+`mobile/android/app/build.gradle.kts`: Google Play automatic protection rejects bundles
+with a lower minimum SDK. After changing this, push the fix and start a new workflow run;
+rerunning an older run rebuilds its original commit and will still use the old minimum SDK.
+
 ## One-time setup
 
 1. Create the app `com.boringman.splashdash` in Play Console. The Play API cannot create apps,

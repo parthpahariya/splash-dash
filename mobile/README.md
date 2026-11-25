@@ -4,7 +4,7 @@ Two independent native apps port the browser game's four-lane simulation:
 
 | Platform | Language and UI | Minimum version | Project |
 | --- | --- | --- | --- |
-| Android | Kotlin, Android Views and Canvas | Android 5.0 / API 21 | `android/` |
+| Android | Kotlin, Android Views and Canvas | Android 7.0 / API 24 | `android/` |
 | iPhone and iPad | Swift, SwiftUI and Core Graphics | iOS / iPadOS 15 | `ios/WakeRunner.xcodeproj` |
 
 Both apps run entirely offline. They include swipe steering and upward-swipe jumps, held cannon fire, tap-to-target pirate shots, heart pickups, increasing difficulty, pause/resume, optional sound (off initially), and a best score stored on the device. The app pauses when backgrounded and waits for an explicit resume. Portrait and landscape are supported; screen-reader custom actions provide steering and jumping without swipes.

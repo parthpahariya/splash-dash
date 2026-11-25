@@ -10,7 +10,8 @@ android {
     compileSdk = 35
     defaultConfig {
         applicationId = "com.boringman.splashdash"
-        minSdk = 21
+        // Google Play automatic protection requires API 24 or newer.
+        minSdk = 24
         targetSdk = 35
         versionCode = providers.environmentVariable("ANDROID_VERSION_CODE").orNull?.toInt() ?: 1
         versionName = providers.environmentVariable("ANDROID_VERSION_NAME").orNull ?: "1.0.0"
