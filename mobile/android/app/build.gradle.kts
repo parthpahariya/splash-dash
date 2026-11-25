@@ -7,12 +7,12 @@ fun requiredEnv(name: String): String =
 
 android {
     namespace = "com.boringman.splashdash"
-    compileSdk = 35
+    compileSdk = 36
     defaultConfig {
         applicationId = "com.boringman.splashdash"
         // Google Play automatic protection requires API 24 or newer.
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 36
         versionCode = providers.environmentVariable("ANDROID_VERSION_CODE").orNull?.toInt() ?: 1
         versionName = providers.environmentVariable("ANDROID_VERSION_NAME").orNull ?: "1.0.0"
     }
