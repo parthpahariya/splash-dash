@@ -58,7 +58,6 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
                 "damage" -> "Hull hit — change lanes!"
                 "jump" -> "Catching some air"
                 "heart" -> "+25 hull · +50 points"
-                "pickupJump" -> "Jump boost +1"
                 "sink" -> "Pirate sunk · +250 points"
                 "level" -> "Level ${game.level} · rougher waters"
                 else -> null
@@ -270,7 +269,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         if (game.status == Status.PLAYING) game.pause()
         updateHUD()
         AlertDialog.Builder(this).setTitle("Captain’s handbook")
-            .setMessage("Swipe left or right across the water to steer. Swipe up to jump. Screen-reader actions on the waterway also let you steer and jump.\n\nHold Fire to shoot ahead. Tap a pirate to aim across lanes; two hits sink it for 250 points.\n\nJump clears rocks, ships and cannonballs for 1.15 seconds. Blue pickups add a jump, up to five.\n\nHearts repair 25 hull. Rocks cost 25 hull, cannonballs 15, ships 30.\n\nEvery 300 meters the water gets faster. Sound starts off. Your best score is saved on this device.")
+            .setMessage("Swipe left or right across the water to steer. Swipe up to jump. Screen-reader actions on the waterway also let you steer and jump.\n\nHold Fire to shoot ahead. Tap a pirate to aim across lanes; two hits sink it for 250 points.\n\nJump clears rocks, ships and cannonballs for 1.15 seconds. Start with two jumps each voyage. Jump charges cannot be collected.\n\nHearts repair 25 hull. Rocks cost 25 hull, cannonballs 15, ships 30.\n\nEvery 300 meters the water gets faster. Sound starts off. Your best score is saved on this device.")
             .setPositiveButton("Got it", null).show()
     }
     private fun saveBest() { best = max(best, game.score); prefs.edit().putInt("best", best).apply() }

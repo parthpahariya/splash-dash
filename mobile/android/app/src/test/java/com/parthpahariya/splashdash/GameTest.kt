@@ -16,11 +16,19 @@ class GameTest {
         g.invincible = 0.0; assertTrue(g.jump()); assertFalse(g.damage(25)); assertFalse(g.jump())
         assertEquals(1, g.jumps)
     }
-    @Test fun pickupsRepairAndCapInventory() {
+    @Test fun heartsRepairWithoutReplenishingJumps() {
         val g = game(); g.health = 90; g.spawn(Kind.HEART, 1, Game.PLAYER_Y); g.update(0.0)
         assertEquals(100, g.health); assertEquals(50, g.score); assertEquals(1, g.heartsCollected)
-        g.jumps = 5; g.spawn(Kind.JUMP, 1, Game.PLAYER_Y); g.update(0.0)
-        assertEquals(5, g.jumps); assertEquals(75, g.score)
+        assertEquals(2, g.jumps)
+    }
+    @Test fun automaticPickupsAreHeartsOnlyAndNeverRestoreJumps() {
+        for (roll in listOf(.1, .9)) {
+            val g = Game({ roll }); g.reset(); g.invincible = 100.0
+            assertTrue(g.jump())
+            repeat(160) { g.update(.05) }
+            assertEquals(1, g.jumps)
+            assertEquals(roll < .58, g.entities.any { it.kind == Kind.HEART })
+        }
     }
     @Test fun twoHitsSinkPirate() {
         val g = game(); val e = g.spawn(Kind.PIRATE, 1, 200.0)!!
@@ -63,7 +71,7 @@ class GameTest {
         val g = game(); val rock = g.spawn(Kind.ROCK, 1, -80.0)!!
         val heart = g.spawn(Kind.HEART, 1, -80.0)!!; assertTrue(abs(rock.y-heart.y) >= 120)
         val pirate = g.spawn(Kind.PIRATE, 2, 100.0)!!
-        assertNotEquals(pirate.lane, g.spawn(Kind.JUMP, 2)!!.lane)
+        assertNotEquals(pirate.lane, g.spawn(Kind.HEART, 2)!!.lane)
         val crowded = game(); for (lane in 0..3) crowded.spawn(Kind.PIRATE, lane, 100.0)
         assertNull(crowded.spawn(Kind.ROCK)); assertNull(crowded.spawn(Kind.HEART))
     }

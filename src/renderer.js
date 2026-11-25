@@ -46,13 +46,12 @@ export class Renderer {
       this.rock(c, LANES[3], 541, .9, 4);
       this.rock(c, LANES[2], 55, .6, 5);
       this.pirate(c, LANES[3], 171, time);
-      this.pickup(c, LANES[0], 481, 'heart', time, 0);
-      this.pickup(c, LANES[2], 640, 'jump', time, 2);
+      this.heart(c, LANES[0], 481, time, 0);
     }
     for (const e of game.entities) {
       if (e.type === 'rock') this.rock(c, e.x, e.y, 1, e.seed);
       else if (e.type === 'pirate') this.pirate(c, e.x, e.y, time, e.hit, e.hp, game.x, e.flash);
-      else this.pickup(c, e.x, e.y, e.type, time, e.seed);
+      else this.heart(c, e.x, e.y, time, e.seed);
     }
     for (const b of game.bullets) {
       if (b.enemy) {
@@ -230,23 +229,16 @@ export class Renderer {
     c.restore();
   }
 
-  pickup(c, x, y, type, time, seed) {
+  heart(c, x, y, time, seed) {
     c.save(); c.translate(x, y + (this.reduced ? 0 : Math.sin(time * 2.5 + seed) * 4));
-    const heart = type === 'heart';
-    const color = heart ? '#ffa3b2' : '#a1dcf0';
-    ellipse(c, 0, 13, 25, 11, heart ? '#ffb8c02a' : '#a1e6f32a');
-    c.beginPath(); c.arc(0, 0, 25, 0, TAU); c.fillStyle = heart ? '#cf758d30' : '#8ac7ed30'; c.fill();
-    c.strokeStyle = heart ? '#ffd3c67a' : '#d5faff70'; c.lineWidth = 1; c.stroke();
-    c.beginPath(); c.arc(0, 0, 20, 0, TAU); c.fillStyle = heart ? '#895565' : '#376d88'; c.fill();
+    const color = '#ffa3b2';
+    ellipse(c, 0, 13, 25, 11, '#ffb8c02a');
+    c.beginPath(); c.arc(0, 0, 25, 0, TAU); c.fillStyle = '#cf758d30'; c.fill();
+    c.strokeStyle = '#ffd3c67a'; c.lineWidth = 1; c.stroke();
+    c.beginPath(); c.arc(0, 0, 20, 0, TAU); c.fillStyle = '#895565'; c.fill();
     c.strokeStyle = color; c.lineWidth = 1.5; c.stroke();
-    if (heart) {
-      c.beginPath(); c.moveTo(0, 11); c.bezierCurveTo(-23, -4, -9, -20, 0, -9); c.bezierCurveTo(9, -20, 23, -4, 0, 11); c.fillStyle = color; c.fill();
-      line(c, [[-9, -6], [-6, -9]], '#ffe3cf', 2);
-    } else {
-      line(c, [[-8, -1], [0, -9], [8, -1]], color, 3);
-      line(c, [[0, -8], [0, 8]], color, 3);
-      line(c, [[-9, 8], [-9, 12], [9, 12], [9, 8]], color, 2);
-    }
+    c.beginPath(); c.moveTo(0, 11); c.bezierCurveTo(-23, -4, -9, -20, 0, -9); c.bezierCurveTo(9, -20, 23, -4, 0, 11); c.fillStyle = color; c.fill();
+    line(c, [[-9, -6], [-6, -9]], '#ffe3cf', 2);
     c.restore();
   }
 }

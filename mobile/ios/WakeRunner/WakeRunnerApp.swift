@@ -92,7 +92,6 @@ final class GameModel: ObservableObject {
     case "damage": notice = "Hull hit — change lanes!"
     case "jump": notice = "Catching some air"
     case "heart": notice = "+25 hull · +50 points"
-    case "pickupJump": notice = "Jump boost +1"
     case "sink": notice = "Pirate sunk · +250 points"
     case "level": notice = "Level \(game.level) · rougher waters"
     case "over":
@@ -100,7 +99,7 @@ final class GameModel: ObservableObject {
       frame &+= 1
     default: break
     }
-    if ["damage", "jump", "heart", "pickupJump", "sink", "level"].contains(event) {
+    if ["damage", "jump", "heart", "sink", "level"].contains(event) {
       noticeUntil = CACurrentMediaTime() + 1.6
     }
     if sound && ["fire", "damage", "heart", "jump", "sink"].contains(event) { playTone(event) }
@@ -332,7 +331,7 @@ struct GameScreen: View {
             "Hold Fire to shoot ahead. Tap a pirate to aim across lanes. Two hits sink it for 250 points."
           )
           Text(
-            "Jump clears rocks, ships and cannonballs for 1.15 seconds. Each upward swipe uses one jump. Blue pickups add a jump, up to five."
+            "Jump clears rocks, ships and cannonballs for 1.15 seconds. Each upward swipe uses one of your two starting jumps. Jump charges cannot be collected."
           )
           Text(
             "Hearts repair 25 hull. Rocks cost 25 hull, cannonballs 15, and pirate collisions 30.")

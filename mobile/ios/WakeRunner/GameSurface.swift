@@ -107,8 +107,7 @@ final class WaterView: UIView {
     if game.status == .ready {
       rock(c, 211, 230)
       boat(c, 589, 170, pirate: true)
-      pickup(c, 463, 440, heart: false)
-      pickup(c, 211, 530, heart: true)
+      heart(c, 211, 530)
     }
     for e in game.entities where !e.dead {
       switch e.kind {
@@ -117,8 +116,7 @@ final class WaterView: UIView {
         boat(c, e.x, e.y, pirate: true, hit: e.hit > 0)
         if e.hp == 1 { line(c, e.x - 15, e.y + 15, e.x + 15, e.y - 15, "F8EED6", 3) }
         if e.flash > 0 { oval(c, e.x, e.y + 60, 16, 19, "FFE2A2") }
-      case .heart: pickup(c, e.x, e.y, heart: true)
-      case .jump: pickup(c, e.x, e.y, heart: false)
+      case .heart: heart(c, e.x, e.y)
       }
     }
     for b in game.bullets where !b.dead {
@@ -207,17 +205,11 @@ final class WaterView: UIView {
     line(c, 0, -45, 0, -61, "283E46", 9)
     c.restoreGState()
   }
-  private func pickup(_ c: CGContext, _ x: Double, _ y: Double, heart: Bool) {
-    oval(c, x, y, 27, 27, heart ? "885469" : "305E78")
-    if heart {
-      oval(c, x - 7, y - 5, 8, 8, "FFB7C4")
-      oval(c, x + 7, y - 5, 8, 8, "FFB7C4")
-      polygon(c, [x - 15, y - 3, x + 15, y - 3, x, y + 16], "FFB7C4")
-    } else {
-      polygon(
-        c, [x, y - 16, x - 13, y, x - 5, y, x - 5, y + 15, x + 5, y + 15, x + 5, y, x + 13, y],
-        "B5EDFF")
-    }
+  private func heart(_ c: CGContext, _ x: Double, _ y: Double) {
+    oval(c, x, y, 27, 27, "885469")
+    oval(c, x - 7, y - 5, 8, 8, "FFB7C4")
+    oval(c, x + 7, y - 5, 8, 8, "FFB7C4")
+    polygon(c, [x - 15, y - 3, x + 15, y - 3, x, y + 16], "FFB7C4")
   }
   override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
     guard let p = touches.first?.location(in: self) else { return }

@@ -2,7 +2,7 @@ import Foundation
 
 // Pure Swift simulation. Coordinates and gameplay rules mirror src/engine.js.
 enum GameStatus { case ready, playing, paused, over }
-enum EntityKind { case rock, pirate, heart, jump }
+enum EntityKind { case rock, pirate, heart }
 final class Entity {
   let id: Int
   let kind: EntityKind
@@ -152,13 +152,12 @@ final class Game {
     }
     return true
   }
-  private func pickup(_ kind: EntityKind) -> Bool { kind == .heart || kind == .jump }
   @discardableResult func spawn(
     _ kind: EntityKind, lane requestedLane: Int? = nil, y requestedY: Double = -80
   ) -> Entity? {
     var lane = max(0, min(3, requestedLane ?? Int(random() * 4)))
     var y = requestedY
-    if kind == .rock || pickup(kind) {
+    if kind == .rock || kind == .heart {
       guard
         let available = (0..<4).map({ (lane + $0) % 4 }).first(where: { candidate in
           !entities.contains { !$0.dead && $0.lane == candidate && $0.kind == .pirate }
@@ -175,7 +174,7 @@ final class Game {
     }
     let neighbors = entities.filter { !$0.dead && $0.lane == lane }
     if kind == .pirate {
-      for e in neighbors where e.kind == .rock || pickup(e.kind) { y = min(y, e.y - 120) }
+      for e in neighbors where e.kind == .rock || e.kind == .heart { y = min(y, e.y - 120) }
     }
     for e in neighbors.sorted(by: { $0.y > $1.y }) where abs(e.y - y) < 120 { y = e.y - 120 }
     let entity = Entity(id: nextID, kind: kind, lane: lane, y: y, cooldown: 1.5 + random())
@@ -209,7 +208,7 @@ final class Game {
       spawnTimer = max(0.9, 1.8 - Double(level) * 0.07) + random() * 0.5
     }
     if pickupTimer <= 0 {
-      spawn(random() < 0.58 ? .heart : .jump)
+      if random() < 0.58 { spawn(.heart) }
       pickupTimer = 4 + random() * 3
     }
     if pirateTimer <= 0 {
@@ -243,11 +242,6 @@ final class Game {
           bonus += 50
           e.dead = true
           onEvent("heart")
-        case .jump:
-          jumps = min(5, jumps + 1)
-          bonus += 25
-          e.dead = true
-          onEvent("pickupJump")
         default: if !jumping && damage(e.kind == .rock ? 25 : 30) { e.dead = true }
         }
         if status == .over { return }

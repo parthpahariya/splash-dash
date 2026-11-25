@@ -30,7 +30,7 @@ final class GameTests: XCTestCase {
     XCTAssertFalse(g.jump())
     XCTAssertEqual(g.jumps, 1)
   }
-  func testPickupsRepairAndCapInventory() {
+  func testHeartsRepairWithoutReplenishingJumps() {
     let g = game()
     g.health = 90
     g.spawn(.heart, lane: 1, y: Game.playerY)
@@ -38,11 +38,18 @@ final class GameTests: XCTestCase {
     XCTAssertEqual(g.health, 100)
     XCTAssertEqual(g.score, 50)
     XCTAssertEqual(g.heartsCollected, 1)
-    g.jumps = 5
-    g.spawn(.jump, lane: 1, y: Game.playerY)
-    g.update(0)
-    XCTAssertEqual(g.jumps, 5)
-    XCTAssertEqual(g.score, 75)
+    XCTAssertEqual(g.jumps, 2)
+  }
+  func testAutomaticPickupsAreHeartsOnlyAndNeverRestoreJumps() {
+    for roll in [0.1, 0.9] {
+      let g = Game(random: { roll })
+      g.reset()
+      g.invincible = 100
+      XCTAssertTrue(g.jump())
+      for _ in 0..<160 { g.update(0.05) }
+      XCTAssertEqual(g.jumps, 1)
+      XCTAssertEqual(g.entities.contains { $0.kind == .heart }, roll < 0.58)
+    }
   }
   func testTwoHitsSinkPirate() {
     let g = game()
@@ -130,7 +137,7 @@ final class GameTests: XCTestCase {
     let heart = g.spawn(.heart, lane: 1, y: -80)!
     XCTAssertGreaterThanOrEqual(abs(rock.y - heart.y), 120)
     let pirate = g.spawn(.pirate, lane: 2, y: 100)!
-    XCTAssertNotEqual(pirate.lane, g.spawn(.jump, lane: 2)!.lane)
+    XCTAssertNotEqual(pirate.lane, g.spawn(.heart, lane: 2)!.lane)
     let crowded = game()
     for lane in 0..<4 { crowded.spawn(.pirate, lane: lane, y: 100) }
     XCTAssertNil(crowded.spawn(.rock))

@@ -77,7 +77,7 @@ class GameView(context: Context, val game: Game) : View(context) {
         paint.pathEffect = null
         if (game.status == Status.READY) {
             rock(c, 211.0, 230.0); boat(c, 589.0, 170.0, true)
-            pickup(c, 463.0, 440.0, false); pickup(c, 211.0, 530.0, true)
+            heart(c, 211.0, 530.0)
         }
         for (e in game.entities) if (!e.dead) {
             when (e.kind) {
@@ -87,8 +87,7 @@ class GameView(context: Context, val game: Game) : View(context) {
                     if (e.hp == 1) line(c, e.x - 15, e.y + 15, e.x + 15, e.y - 15, "#F8EED6", 3f)
                     if (e.flash > 0) oval(c, e.x, e.y + 60, 16.0, 19.0, "#FFE2A2")
                 }
-                Kind.HEART -> pickup(c, e.x, e.y, true)
-                Kind.JUMP -> pickup(c, e.x, e.y, false)
+                Kind.HEART -> heart(c, e.x, e.y)
             }
         }
         for (b in game.bullets) if (!b.dead) {
@@ -150,14 +149,10 @@ class GameView(context: Context, val game: Game) : View(context) {
         line(c,0.0,-45.0,0.0,-61.0,"#283E46",9f)
         c.restore()
     }
-    private fun pickup(c: Canvas, x: Double, y: Double, heart: Boolean) {
-        oval(c,x,y,27.0,27.0,if (heart) "#885469" else "#305E78")
-        if (heart) {
-            oval(c,x-7,y-5,8.0,8.0,"#FFB7C4"); oval(c,x+7,y-5,8.0,8.0,"#FFB7C4")
-            polygon(c,doubleArrayOf(x-15,y-3,x+15,y-3,x,y+16),"#FFB7C4")
-        } else {
-            polygon(c,doubleArrayOf(x,y-16,x-13,y,x-5,y,x-5,y+15,x+5,y+15,x+5,y,x+13,y),"#B5EDFF")
-        }
+    private fun heart(c: Canvas, x: Double, y: Double) {
+        oval(c,x,y,27.0,27.0,"#885469")
+        oval(c,x-7,y-5,8.0,8.0,"#FFB7C4"); oval(c,x+7,y-5,8.0,8.0,"#FFB7C4")
+        polygon(c,doubleArrayOf(x-15,y-3,x+15,y-3,x,y+16),"#FFB7C4")
     }
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {

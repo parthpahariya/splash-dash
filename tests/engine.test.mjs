@@ -34,9 +34,16 @@ test('heart pickups restore health without exceeding 100', () => {
   const g = fresh(); g.health = 90; g.spawn('heart', 1, PLAYER_Y); g.update(.01);
   assert.equal(g.health, 100); assert.equal(g.heartsCollected, 1); assert.equal(g.bonus, 50);
 });
-test('jump pickups add charges and cap inventory at five', () => {
-  const g = fresh(); g.spawn('jump', 1, PLAYER_Y); g.update(.01); assert.equal(g.jumps, 3);
-  g.jumps = 5; g.spawn('jump', 1, PLAYER_Y); g.update(.01); assert.equal(g.jumps, 5);
+test('automatic pickups are hearts only and never replenish jump charges', () => {
+  for (const roll of [.1, .9]) {
+    const g = new Game({ random: () => roll }); g.reset(); g.invincible = 100;
+    assert.equal(g.jump(), true);
+    advance(g, 8);
+    assert.equal(g.jumps, 1);
+    assert.equal(g.spawn('jump', 1, PLAYER_Y), null);
+    assert.equal(g.entities.some(e => e.type === 'heart'), roll < .58);
+    assert.ok(g.entities.every(e => ['rock', 'pirate', 'heart'].includes(e.type)));
+  }
 });
 test('two cannon hits sink a pirate and award 250 points', () => {
   const g = fresh(); const p = g.spawn('pirate', 1, 300);
@@ -71,18 +78,18 @@ test('a lethal collision ends the frame before another pickup can change the res
   assert.equal(g.status, 'over'); assert.equal(g.health, 0); assert.equal(g.heartsCollected, 0);
 });
 
-test('hearts and jump boosts cannot occupy the same location', () => {
+test('heart pickups cannot occupy the same location', () => {
   const g = fresh();
   const heart = g.spawn('heart', 1);
-  const boost = g.spawn('jump', 1);
-  assert.equal(heart.lane, boost.lane);
-  assert.equal(heart.y - boost.y, SPAWN_GAP);
+  const secondHeart = g.spawn('heart', 1);
+  assert.equal(heart.lane, secondHeart.lane);
+  assert.equal(heart.y - secondHeart.y, SPAWN_GAP);
   advance(g, 2);
-  assert.ok(Math.abs(heart.y - boost.y) >= SPAWN_GAP - .001);
+  assert.ok(Math.abs(heart.y - secondHeart.y) >= SPAWN_GAP - .001);
 });
 
 test('pickups can appear above rocks with a clear gap in either spawn order', () => {
-  for (const type of ['heart', 'jump']) {
+  for (const type of ['heart']) {
     const g = fresh();
     const rock = g.spawn('rock', 1);
     const pickup = g.spawn(type, 1);
@@ -99,7 +106,7 @@ test('pickups can appear above rocks with a clear gap in either spawn order', ()
 
 test('several pickups sharing a spawn point stay separated', () => {
   const g = fresh();
-  for (const type of ['heart', 'jump', 'heart', 'jump']) g.spawn(type, 2);
+  for (const type of ['heart', 'heart', 'heart', 'heart']) g.spawn(type, 2);
   for (let i = 0; i < g.entities.length; i++) {
     for (let j = i + 1; j < g.entities.length; j++) {
       assert.ok(Math.abs(g.entities[i].y - g.entities[j].y) >= SPAWN_GAP);
@@ -112,7 +119,7 @@ test('pickups use an open lane so they cannot catch up to a pirate', () => {
   const heart = g.spawn('heart', 1);
   assert.notEqual(heart.lane, 1);
   for (const lane of [0, 2, 3]) g.spawn('pirate', lane, 100);
-  assert.equal(g.spawn('jump', 1), null);
+  assert.equal(g.spawn('heart', 1), null);
 });
 
 test('a new pirate stays behind earlier pickups that move faster', () => {
@@ -133,7 +140,7 @@ test('pickups stay clear of all objects throughout a scrolling run', () => {
     // Isolate spawn spacing from player damage during this simulated minute.
     g.invincible = 1;
     g.update(.01);
-    for (const pickup of g.entities.filter(e => e.type === 'heart' || e.type === 'jump')) {
+    for (const pickup of g.entities.filter(e => e.type === 'heart')) {
       pickupsSeen++;
       for (const other of g.entities) {
         if (other !== pickup && other.lane === pickup.lane) {

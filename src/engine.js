@@ -4,8 +4,6 @@ export const MAX_HEALTH = 100;
 export const JUMP_DURATION = 1.15;
 export const SPAWN_GAP = 120;
 
-const isPickup = type => type === 'heart' || type === 'jump';
-
 export class Game {
   constructor({ random = Math.random, onEvent = () => {} } = {}) {
     this.random = random;
@@ -98,7 +96,8 @@ export class Game {
   }
 
   spawn(type, lane = Math.floor(this.random() * 4), y = -80) {
-    if (type === 'rock' || isPickup(type)) {
+    if (!['rock', 'pirate', 'heart'].includes(type)) return null;
+    if (type === 'rock' || type === 'heart') {
       // Rocks and pickups move faster than pirates. Reserve occupied lanes
       // until the pirate leaves so faster objects cannot catch its hull.
       const availableLane = Array.from({ length: 4 }, (_, i) => (lane + i) % 4)
@@ -112,7 +111,7 @@ export class Game {
     if (type === 'pirate') {
       // A new pirate stays above all faster objects already in its lane.
       // Their separation increases as they move down the waterway.
-      for (const e of neighbors) if (e.type === 'rock' || isPickup(e.type)) y = Math.min(y, e.y - SPAWN_GAP);
+      for (const e of neighbors) if (e.type === 'rock' || e.type === 'heart') y = Math.min(y, e.y - SPAWN_GAP);
     }
     // Place a new object above anything occupying its position. Rocks and
     // pickups share a speed, so this gap stays intact as they scroll.
@@ -152,7 +151,7 @@ export class Game {
     this.pickupTimer -= dt;
     this.pirateTimer -= dt;
     if (this.spawnTimer <= 0) { this.spawn('rock'); this.spawnTimer = Math.max(.9, 1.8 - this.level * .07) + this.random() * .5; }
-    if (this.pickupTimer <= 0) { this.spawn(this.random() < .58 ? 'heart' : 'jump'); this.pickupTimer = 4 + this.random() * 3; }
+    if (this.pickupTimer <= 0) { if (this.random() < .58) this.spawn('heart'); this.pickupTimer = 4 + this.random() * 3; }
     if (this.pirateTimer <= 0) { this.spawn('pirate'); this.pirateTimer = Math.max(3, 7 - this.level * .35) + this.random() * 2; }
 
     for (const e of this.entities) {
@@ -181,12 +180,6 @@ export class Game {
           this.bonus += 50;
           this.burst(e.x, e.y, '#ffabc0');
           this.onEvent({ type: 'heart' });
-          e.dead = true;
-        } else if (e.type === 'jump') {
-          this.jumps = Math.min(5, this.jumps + 1);
-          this.bonus += 25;
-          this.burst(e.x, e.y, '#a1e8ff');
-          this.onEvent({ type: 'pickupJump' });
           e.dead = true;
         } else if (!this.jumping && this.damage(e.type === 'rock' ? 25 : 30)) e.dead = true;
         if (this.status === 'over') return;

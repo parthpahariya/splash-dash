@@ -3,7 +3,7 @@ package com.parthpahariya.splashdash
 import kotlin.math.*
 
 enum class Status { READY, PLAYING, PAUSED, OVER }
-enum class Kind { ROCK, PIRATE, HEART, JUMP }
+enum class Kind { ROCK, PIRATE, HEART }
 class Entity(val id: Int, val kind: Kind, val lane: Int, var y: Double, var cooldown: Double) {
     val x get() = Game.LANES[lane]
     var hp = 2
@@ -92,10 +92,9 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
         if (health == 0) { status = Status.OVER; firing = false; onEvent("over") }
         return true
     }
-    private fun pickup(kind: Kind) = kind == Kind.HEART || kind == Kind.JUMP
     fun spawn(kind: Kind, requestedLane: Int = (random() * 4).toInt(), atY: Double = -80.0): Entity? {
         var lane = requestedLane.coerceIn(0, 3); var y = atY
-        if (kind == Kind.ROCK || pickup(kind)) {
+        if (kind == Kind.ROCK || kind == Kind.HEART) {
             lane = (0..3).map { (lane + it) % 4 }.firstOrNull { candidate ->
                 entities.none { !it.dead && it.lane == candidate && it.kind == Kind.PIRATE }
             } ?: return null
@@ -105,7 +104,7 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
         }) return null
         val neighbors = entities.filter { !it.dead && it.lane == lane }
         if (kind == Kind.PIRATE) for (e in neighbors) {
-            if (e.kind == Kind.ROCK || pickup(e.kind)) y = min(y, e.y - 120)
+            if (e.kind == Kind.ROCK || e.kind == Kind.HEART) y = min(y, e.y - 120)
         }
         for (e in neighbors.sortedByDescending { it.y }) if (abs(e.y - y) < 120) y = e.y - 120
         return Entity(nextID++, kind, lane, y, 1.5 + random()).also { entities.add(it) }
@@ -125,7 +124,7 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
         if (firing) fire()
         spawnTimer -= dt; pickupTimer -= dt; pirateTimer -= dt
         if (spawnTimer <= 0) { spawn(Kind.ROCK); spawnTimer = max(.9, 1.8 - level * .07) + random() * .5 }
-        if (pickupTimer <= 0) { spawn(if (random() < .58) Kind.HEART else Kind.JUMP); pickupTimer = 4 + random() * 3 }
+        if (pickupTimer <= 0) { if (random() < .58) spawn(Kind.HEART); pickupTimer = 4 + random() * 3 }
         if (pirateTimer <= 0) { spawn(Kind.PIRATE); pirateTimer = max(3.0, 7 - level * .35) + random() * 2 }
         for (e in entities) {
             e.y += speed * dt * (if (e.kind == Kind.PIRATE) .44 else 1.0)
@@ -142,7 +141,6 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
             if (!e.dead && abs(e.x - x) < 43 && abs(e.y - PLAYER_Y) < (if (e.kind == Kind.PIRATE) 64 else 42)) {
                 when (e.kind) {
                     Kind.HEART -> { health = min(100, health + 25); heartsCollected++; bonus += 50; e.dead = true; onEvent("heart") }
-                    Kind.JUMP -> { jumps = min(5, jumps + 1); bonus += 25; e.dead = true; onEvent("pickupJump") }
                     else -> if (!jumping && damage(if (e.kind == Kind.ROCK) 25 else 30)) e.dead = true
                 }
                 if (status == Status.OVER) return
