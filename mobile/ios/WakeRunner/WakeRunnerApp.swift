@@ -10,7 +10,8 @@ struct WakeRunnerApp: App {
     WindowGroup {
       GameScreen(model: model)
         .preferredColorScheme(.dark)
-        .onChange(of: scenePhase) { _, phase in
+        // The single-value form keeps iOS 15/16 support (deprecated only from iOS 17).
+        .onChange(of: scenePhase) { phase in
           if phase == .active { model.activate() } else { model.deactivate() }
         }
         .onAppear { model.activate() }
@@ -253,6 +254,52 @@ struct ClayButtonStyle: ButtonStyle {
 /// Scores always show at least six digits (000637) so the HUD keeps a steady width.
 func scoreDigits(_ score: Int) -> String { String(format: "%06d", max(0, score)) }
 
+// MARK: - iOS 15 compatibility
+// The app supports iOS 15+. Newer APIs and SF Symbols are used when available, with the
+// closest iOS 15 equivalent otherwise.
+
+/// SF Symbols added in iOS 16, mapped to iOS 13-era stand-ins.
+private let symbolFallbacks = [
+  "flag.checkered": "flag.fill", "sailboat.fill": "play.fill",
+  "trophy.fill": "star.fill", "water.waves": "map.fill",
+]
+func symbol(_ name: String) -> String {
+  UIImage(systemName: name) != nil ? name : symbolFallbacks[name] ?? name
+}
+
+extension View {
+  /// SF Rounded everywhere on iOS 16.1+; the system font on older versions.
+  @ViewBuilder func roundedDesign() -> some View {
+    if #available(iOS 16.1, *) { fontDesign(.rounded) } else { self }
+  }
+  /// Stops the per-frame score from cross-fading between values.
+  @ViewBuilder func steadyDigits() -> some View {
+    if #available(iOS 16, *) { contentTransition(.identity) } else { self }
+  }
+  /// Centers short menu content and only bounces when it overflows.
+  @ViewBuilder func centeredScroll() -> some View {
+    if #available(iOS 17, *) {
+      defaultScrollAnchor(.center).scrollBounceBehavior(.basedOnSize)
+    } else if #available(iOS 16.4, *) {
+      scrollBounceBehavior(.basedOnSize)
+    } else {
+      self
+    }
+  }
+}
+
+/// NavigationStack on iOS 16+, a stack-style NavigationView on iOS 15.
+struct CompatNavigation<Content: View>: View {
+  @ViewBuilder let content: () -> Content
+  var body: some View {
+    if #available(iOS 16, *) {
+      NavigationStack(root: content)
+    } else {
+      NavigationView(content: content).navigationViewStyle(.stack)
+    }
+  }
+}
+
 // MARK: - Screen
 
 struct GameScreen: View {
@@ -305,7 +352,7 @@ struct GameScreen: View {
     }
     .background(Theme.sea.ignoresSafeArea())
     .foregroundStyle(Theme.cream)
-    .fontDesign(.rounded)
+    .roundedDesign()
     .statusBarHidden(true)
     .sheet(isPresented: $help) { handbook }
   }
@@ -375,7 +422,7 @@ struct GameScreen: View {
         .foregroundStyle(Theme.gold)
       Text(scoreDigits(model.game.score))
         .font(.title3.weight(.black)).monospacedDigit()
-        .fixedSize().contentTransition(.identity)
+        .fixedSize().steadyDigits()
     }
     .padding(.horizontal, 12).padding(.vertical, 6)
     .frame(minWidth: 84, minHeight: 48, alignment: .trailing)
@@ -386,7 +433,7 @@ struct GameScreen: View {
 
   private func toast(_ notice: Notice) -> some View {
     HStack(spacing: 8) {
-      Image(systemName: notice.icon).foregroundStyle(notice.tint).accessibilityHidden(true)
+      Image(systemName: symbol(notice.icon)).foregroundStyle(notice.tint).accessibilityHidden(true)
       Text(notice.text)
     }
     .font(.subheadline.weight(.heavy))
@@ -447,7 +494,8 @@ struct GameScreen: View {
             Label(
               status == .paused
                 ? "Back to the water" : status == .over ? "One more voyage" : "Set sail",
-              systemImage: status == .paused ? "play.fill" : status == .over ? "arrow.clockwise" : "sailboat.fill"
+              systemImage: symbol(
+                status == .paused ? "play.fill" : status == .over ? "arrow.clockwise" : "sailboat.fill")
             )
             .font(.title3.weight(.black))
             .frame(maxWidth: .infinity, minHeight: 60)
@@ -468,8 +516,7 @@ struct GameScreen: View {
         .padding(.horizontal, 16).padding(.vertical, 24)
         .frame(maxWidth: 460).frame(maxWidth: .infinity)
       }
-      .defaultScrollAnchor(.center)
-      .scrollBounceBehavior(.basedOnSize)
+      .centeredScroll()
     }
     .accessibilityIdentifier("game-menu")
   }
@@ -480,7 +527,7 @@ struct GameScreen: View {
       Text(text).foregroundStyle(Theme.ink).offset(y: 4).accessibilityHidden(true)
       Text(text).foregroundStyle(Theme.cream)
     }
-    .font(.system(.largeTitle, design: .rounded, weight: .black))
+    .font(.system(.largeTitle, design: .rounded).weight(.black))
     .scaleEffect(typeSize.isAccessibilitySize ? 1 : 1.25)
     .padding(.vertical, typeSize.isAccessibilitySize ? 0 : 6)
     .multilineTextAlignment(.center)
@@ -493,8 +540,12 @@ struct GameScreen: View {
     VStack(spacing: 14) {
       VStack(spacing: 2) {
         if newBest {
-          Label("NEW BEST", systemImage: "crown.fill")
-            .font(.caption.weight(.black)).tracking(1.2).foregroundStyle(Theme.ink)
+          Label {
+            Text("NEW BEST").tracking(1.2)
+          } icon: {
+            Image(systemName: "crown.fill")
+          }
+            .font(.caption.weight(.black)).foregroundStyle(Theme.ink)
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(Theme.mint, in: Capsule())
         }
@@ -514,7 +565,7 @@ struct GameScreen: View {
 
   private func stat(_ icon: String, _ value: String, _ label: String) -> some View {
     VStack(spacing: 2) {
-      Image(systemName: icon).font(.subheadline.weight(.bold)).foregroundStyle(Theme.mint)
+      Image(systemName: symbol(icon)).font(.subheadline.weight(.bold)).foregroundStyle(Theme.mint)
         .accessibilityHidden(true)
       Text(value).font(.headline.weight(.black)).monospacedDigit()
         .lineLimit(1).minimumScaleFactor(0.7)
@@ -529,7 +580,7 @@ struct GameScreen: View {
     Label {
       Text("Personal best  \(scoreDigits(model.best))").monospacedDigit()
     } icon: {
-      Image(systemName: "trophy.fill").foregroundStyle(Theme.gold)
+      Image(systemName: symbol("trophy.fill")).foregroundStyle(Theme.gold)
     }
     .font(.subheadline.weight(.heavy))
     .foregroundStyle(Theme.creamMuted)
@@ -600,7 +651,7 @@ struct GameScreen: View {
       ("wind", Theme.mint, "Levels",
        "Every 300 meters the water gets faster. Pause is at the top left; sound and help are in the pause menu."),
     ]
-    return NavigationStack {
+    return CompatNavigation {
       ScrollView {
         VStack(alignment: .leading, spacing: 14) {
           Text("Captain’s handbook").font(.largeTitle.weight(.black))
@@ -627,10 +678,10 @@ struct GameScreen: View {
       }
       .background(Theme.deep.ignoresSafeArea())
       .foregroundStyle(Theme.cream)
-      .fontDesign(.rounded)
+      .roundedDesign()
       .toolbar {
         ToolbarItem(placement: .confirmationAction) {
-          Button("Done") { help = false }.fontWeight(.heavy).tint(Theme.gold)
+          Button("Done") { help = false }.font(.body.weight(.heavy)).tint(Theme.gold)
         }
       }
     }
