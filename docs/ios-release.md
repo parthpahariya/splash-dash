@@ -1,8 +1,8 @@
 # iOS releases (TestFlight)
 
-iOS CI/CD is separate from Android. [.github/scripts/ios.sh](../.github/scripts/ios.sh) runs the checks and builds releases,
-called by [.github/workflows/ios.yml](../.github/workflows/ios.yml) and
-[.gitlab/ios.yml](../.gitlab/ios.yml). Both need macOS with Xcode.
+iOS CI/CD is separate from Android. On GitHub, [.github/workflows/ios.yml](../.github/workflows/ios.yml)
+runs the checks and releases with self-contained steps. On GitLab, [.gitlab/ios.yml](../.gitlab/ios.yml)
+runs [.gitlab/scripts/ios.sh](../.gitlab/scripts/ios.sh). Both need macOS with Xcode.
 
 | Trigger | Result |
 | --- | --- |
@@ -48,7 +48,7 @@ the secrets there. Add the variable to the environment or the repository.
 **GitLab:** add them as protected variables scoped to `app-store` (mask the secrets), protect the
 `ios-v*` tag pattern, and register a macOS runner with the `macos` tag.
 
-The script imports the certificate into a temporary keychain and installs the profile for the
+The release imports the certificate into a temporary keychain and installs the profile for the
 build. It checks the profile's team, bundle ID and expiry, then archives and exports using manual
 signing. It restores the runner's keychain search list and removes its keychain, installed
 profiles and temporary files on success or failure.

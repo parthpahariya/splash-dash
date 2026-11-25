@@ -11,11 +11,11 @@ android-check:
       when: never
     - changes:
         - mobile/android/**/*
-        - .github/scripts/android.sh
-        - .github/scripts/play_upload.py
+        - .gitlab/scripts/android.sh
+        - .gitlab/scripts/play_upload.py
         - .gitlab/android.yml
   script:
-    - bash .github/scripts/android.sh check
+    - bash .gitlab/scripts/android.sh check
   artifacts:
     paths: [mobile/android/app/build/outputs/apk/debug/]
     expire_in: 7 days
@@ -40,13 +40,13 @@ android-play:
     - if: '$CI_COMMIT_BRANCH == $RELEASE_BRANCH && $CI_COMMIT_REF_PROTECTED == "true" && ($CI_PIPELINE_SOURCE == "push" || $CI_PIPELINE_SOURCE == "web")'
       changes:
         - mobile/android/**/*
-        - .github/scripts/android.sh
-        - .github/scripts/play_upload.py
+        - .gitlab/scripts/android.sh
+        - .gitlab/scripts/play_upload.py
         - .gitlab/android.yml
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends python3 python3-venv && rm -rf /var/lib/apt/lists/*
   script:
-    - bash .github/scripts/android.sh release
+    - bash .gitlab/scripts/android.sh release
   artifacts:
     paths: [dist/android/]
     expire_in: 30 days

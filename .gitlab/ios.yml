@@ -11,12 +11,12 @@ ios-check:
       when: never
     - changes:
         - mobile/ios/**/*
-        - .github/scripts/ios.sh
+        - .gitlab/scripts/ios.sh
         - .gitlab/ios.yml
       when: manual
       allow_failure: true
   script:
-    - bash .github/scripts/ios.sh check
+    - bash .gitlab/scripts/ios.sh check
 
 # Protected `ios-vX.Y.Z` tags check, archive and sign a release; it is uploaded to
 # App Store Connect only when IOS_PUBLISH_ENABLED is true.
@@ -36,8 +36,8 @@ ios-testflight:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^ios-v/ && $CI_COMMIT_REF_PROTECTED == "true"'
   script:
-    - bash .github/scripts/ios.sh check
-    - bash .github/scripts/ios.sh release
+    - bash .gitlab/scripts/ios.sh check
+    - bash .gitlab/scripts/ios.sh release
   artifacts:
     paths: [dist/ios/]
     expire_in: 30 days

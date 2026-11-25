@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # iOS CI/CD: checks and TestFlight releases. Kept separate from Android.
-# Called by .github/workflows/ios.yml and .gitlab/ios.yml. Requires macOS with Xcode.
+# GitLab CI/CD script, called by .gitlab/ios.yml. Requires macOS with Xcode.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 project=mobile/ios/WakeRunner.xcodeproj
@@ -183,7 +183,7 @@ case "${1:-}" in
         ;;
     release) release ;;
     *)
-        echo 'Usage: bash .github/scripts/ios.sh {check|release}' >&2
+        echo 'Usage: bash .gitlab/scripts/ios.sh {check|release}' >&2
         exit 2
         ;;
 esac

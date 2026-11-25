@@ -82,8 +82,8 @@ Each native engine has 13 tests covering steering, damage grace and jump protect
 
 ## CI/CD
 
-GitHub Actions and GitLab CI run separate Android and iOS pipelines through `.github/scripts/android.sh` and `.github/scripts/ios.sh`
-(see [.github/scripts/README.md](../.github/scripts/README.md)). Pull requests run checks only when their platform's files change. Pushes to
+GitHub Actions (`.github/workflows/`) and GitLab CI (`.gitlab/`) run separate Android and iOS
+pipelines. Pull requests run checks only when their platform's files change. Pushes to
 `codex/splash-dash-2026-11-25` that touch Android build a signed Google Play release; `ios-vX.Y.Z` tags build a signed
 TestFlight release. Store uploads stay off until `PLAY_PUBLISH_ENABLED` / `IOS_PUBLISH_ENABLED`
 are `true`. Setup: [Android releases](../docs/android-release.md), [iOS releases](../docs/ios-release.md).

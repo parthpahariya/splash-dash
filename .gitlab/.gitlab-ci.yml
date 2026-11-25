@@ -1,6 +1,6 @@
 # GitLab CI/CD entry point. Set Settings → CI/CD → General pipelines →
 # CI/CD configuration file to .gitlab/.gitlab-ci.yml.
-# Jobs call the same scripts as GitHub Actions (.github/scripts/).
+# Jobs run the scripts in .gitlab/scripts/.
 workflow:
   rules:
     # iOS release tags run only the iOS release job.
