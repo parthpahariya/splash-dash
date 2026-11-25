@@ -28,9 +28,30 @@ final class GameTests: XCTestCase {
     XCTAssertTrue(g.jump())
     XCTAssertFalse(g.damage(25))
     XCTAssertFalse(g.jump())
-    XCTAssertEqual(g.jumps, 1)
+    XCTAssertFalse(g.jumpReady)
   }
-  func testHeartsRepairWithoutReplenishingJumps() {
+  func testJumpIsUnlimitedAfterRecharge() {
+    let g = game()
+    g.invincible = 1000
+    for _ in 0..<5 {
+      XCTAssertTrue(g.jump())
+      XCTAssertEqual(g.jumpCharge, 0, accuracy: 0.001)
+      for _ in 0..<24 { g.update(0.05) }  // just over the 1.15 s in the air
+      XCTAssertFalse(g.jumping)
+      XCTAssertFalse(g.jump(), "still recharging just after landing")
+      for _ in 0..<40 { g.update(0.05) }  // past the 2 s recharge
+      XCTAssertTrue(g.jumpReady)
+      XCTAssertEqual(g.jumpCharge, 1, accuracy: 0.001)
+    }
+  }
+  func testJumpRechargePausesWithGame() {
+    let g = game()
+    XCTAssertTrue(g.jump())
+    g.pause()
+    g.update(5)
+    XCTAssertFalse(g.jumpReady)
+  }
+  func testHeartsRepair() {
     let g = game()
     g.health = 90
     g.spawn(.heart, lane: 1, y: Game.playerY)
@@ -38,16 +59,16 @@ final class GameTests: XCTestCase {
     XCTAssertEqual(g.health, 100)
     XCTAssertEqual(g.score, 50)
     XCTAssertEqual(g.heartsCollected, 1)
-    XCTAssertEqual(g.jumps, 2)
+    XCTAssertTrue(g.jumpReady)
   }
-  func testAutomaticPickupsAreHeartsOnlyAndNeverRestoreJumps() {
+  func testAutomaticPickupsAreHeartsOnly() {
     for roll in [0.1, 0.9] {
       let g = Game(random: { roll })
       g.reset()
       g.invincible = 100
       XCTAssertTrue(g.jump())
       for _ in 0..<160 { g.update(0.05) }
-      XCTAssertEqual(g.jumps, 1)
+      XCTAssertTrue(g.jumpReady)
       XCTAssertEqual(g.entities.contains { $0.kind == .heart }, roll < 0.58)
     }
   }
@@ -126,7 +147,7 @@ final class GameTests: XCTestCase {
     g.damage(100)
     g.reset()
     XCTAssertEqual(g.health, 100)
-    XCTAssertEqual(g.jumps, 2)
+    XCTAssertTrue(g.jumpReady)
     XCTAssertEqual(g.status, .playing)
     XCTAssertTrue(g.entities.isEmpty)
     XCTAssertTrue(g.bullets.isEmpty)

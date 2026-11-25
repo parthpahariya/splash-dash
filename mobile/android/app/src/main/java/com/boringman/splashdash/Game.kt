@@ -1,4 +1,4 @@
-package com.parthpahariya.splashdash
+package com.boringman.splashdash
 
 import kotlin.math.*
 

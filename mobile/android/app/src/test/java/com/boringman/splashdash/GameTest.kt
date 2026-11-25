@@ -1,4 +1,4 @@
-package com.parthpahariya.splashdash
+package com.boringman.splashdash
 
 import org.junit.Assert.*
 import org.junit.Test

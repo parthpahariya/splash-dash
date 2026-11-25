@@ -1,4 +1,4 @@
-package com.parthpahariya.splashdash
+package com.boringman.splashdash
 
 import android.content.Context
 import android.graphics.*

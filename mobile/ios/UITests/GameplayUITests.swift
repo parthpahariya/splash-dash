@@ -20,7 +20,7 @@ final class GameplayUITests: XCTestCase {
     water.swipeLeft()
     water.swipeRight()
     water.swipeUp()
-    XCTAssertTrue((water.value as? String)?.contains("Jump charges: 1") == true)
+    XCTAssertTrue((water.value as? String)?.contains("Jump recharging") == true)
     app.buttons["Pause"].tap()
     XCTAssertTrue(app.buttons["Back to the water"].waitForExistence(timeout: 3))
     XCTAssertFalse(app.buttons["Fire cannon"].exists)

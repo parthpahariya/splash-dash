@@ -14,7 +14,7 @@ import xml.etree.ElementTree as ET
 
 sdk = os.environ.get('ANDROID_HOME', str(Path.home() / 'Library/Android/sdk'))
 adb = shutil.which('adb') or str(Path(sdk) / 'platform-tools/adb')
-package = 'com.parthpahariya.splashdash'
+package = 'com.boringman.splashdash'
 
 def run(*args):
     return subprocess.check_output([adb, *args], text=True, stderr=subprocess.STDOUT)

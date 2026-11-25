@@ -1,0 +1,132 @@
+name: Android
+
+# Android CI/CD only; iOS has its own workflow.
+# Checks run on Android changes. A push to the release branch (codex/splash-dash-2026-11-25) that touches
+# Android files, or a manual run, builds a signed release and, when PLAY_PUBLISH_ENABLED is
+# true, uploads it to Google Play.
+on:
+  # Every pull request runs this workflow so "Check Android app" always reports, even when
+  # branch protection requires it; the check itself is skipped when no Android files changed.
+  pull_request:
+  push:
+    branches: [codex/splash-dash-2026-11-25]
+    paths:
+      - mobile/android/**
+      - ci/android.sh
+      - ci/play_upload.py
+      - .github/workflows/android.yml
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version name (X.Y.Z); leave empty to use the one in build.gradle.kts
+        required: false
+      track:
+        description: Google Play track
+        type: choice
+        default: internal
+        options: [internal, alpha, beta, production]
+      status:
+        description: Use draft until the app's first release is published in Play Console
+        type: choice
+        default: draft
+        options: [draft, completed]
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect Android changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      android: ${{ steps.diff.outputs.android }}
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'pull_request'
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Pushes are already limited to Android paths by the trigger.
+          if [[ "$GITHUB_EVENT_NAME" != pull_request ]]; then
+            echo android=true >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "$BASE...$HEAD" \
+              | grep -qE '^(mobile/android/|ci/android\.sh$|ci/play_upload\.py$|\.github/workflows/android\.yml$)'; then
+            echo android=true >> "$GITHUB_OUTPUT"
+          else
+            echo android=false >> "$GITHUB_OUTPUT"
+          fi
+
+  check:
+    name: Check Android app
+    needs: changes
+    # Skipped (which counts as passing) when a pull request changes no Android files.
+    # Release runs test the release build themselves, so they skip this job.
+    if: needs.changes.outputs.android == 'true' && (github.event_name == 'pull_request' || github.ref != 'refs/heads/codex/splash-dash-2026-11-25')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      # Caches Gradle dependencies between runs.
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+      - uses: android-actions/setup-android@v4
+      - run: bash ci/android.sh check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-debug-apk
+          path: mobile/android/app/build/outputs/apk/debug/
+          retention-days: 7
+
+  release:
+    name: Release to Google Play
+    if: github.ref == 'refs/heads/codex/splash-dash-2026-11-25' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: play
+    concurrency:
+      group: play
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: android-actions/setup-android@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: bash ci/android.sh release
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          # Uploads happen only when this variable is `true`; otherwise the signed build is just kept.
+          PLAY_PUBLISH_ENABLED: ${{ vars.PLAY_PUBLISH_ENABLED }}
+          PLAY_TRACK: ${{ inputs.track || vars.PLAY_TRACK || 'internal' }}
+          # Drafts until PLAY_RELEASE_STATUS is set to completed after the first release.
+          PLAY_RELEASE_STATUS: ${{ inputs.status || vars.PLAY_RELEASE_STATUS || 'draft' }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-release
+          path: dist/android/
+          retention-days: 30

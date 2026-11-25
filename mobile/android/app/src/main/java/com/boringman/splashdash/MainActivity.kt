@@ -1,4 +1,4 @@
-package com.parthpahariya.splashdash
+package com.boringman.splashdash
 
 import android.app.Activity
 import android.app.AlertDialog
@@ -30,7 +30,8 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
     private lateinit var water: GameView
     private lateinit var stats: TextView
     private lateinit var healthText: TextView
-    private lateinit var healthBar: ProgressBar
+    private lateinit var healthBar: View
+    private lateinit var healthMeter: LinearLayout
     private lateinit var levelText: TextView
     private lateinit var hud: LinearLayout
     private lateinit var controls: FrameLayout
@@ -135,36 +136,50 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         val safe = FrameLayout(this)
         root.addView(safe, FrameLayout.LayoutParams(-1, -1))
 
-        hud = row().apply {
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-            background = panel(Color.argb(240, 16, 44, 52))
-            gravity = Gravity.TOP
-        }
-        val scoreStack = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        scoreStack.addView(label(10f).apply { text = "SCORE"; letterSpacing = .15f; setTypeface(null, Typeface.BOLD) })
-        stats = label(23f).apply { typeface = Typeface.create("sans-serif-condensed", Typeface.BOLD) }
-        scoreStack.addView(stats)
-        val hull = row()
-        healthBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            max = 100; progressTintList = ColorStateList.valueOf(Color.rgb(140, 227, 205))
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }
-        hull.addView(healthBar, LinearLayout.LayoutParams(dp(64), dp(10)))
-        healthText = label(12f, Color.rgb(140, 227, 205)).apply { setTypeface(null, Typeface.BOLD) }
-        hull.addView(healthText); scoreStack.addView(hull)
-        hud.addView(scoreStack, LinearLayout.LayoutParams(0, -2, 1f))
-        levelText = label(11f, gold).apply { setTypeface(null, Typeface.BOLD); setPadding(dp(8), dp(8), dp(8), dp(8)) }
-        hud.addView(levelText)
+        hud = row().apply { gravity = Gravity.TOP }
         pauseButton = thumbButton("", "pause") { game.pause(); updateHUD() }.apply { contentDescription = "Pause" }
         hud.addView(pauseButton, LinearLayout.LayoutParams(dp(48), dp(48)))
-        safe.addView(hud, FrameLayout.LayoutParams(-1, -2, Gravity.TOP).apply { setMargins(dp(12), dp(8), dp(12), 0) })
+        hud.addView(Space(this), LinearLayout.LayoutParams(0, 1, 1f))
+        val scoreStack = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.RIGHT }
+        fun scoreLabel(size: Float, color: Int = cream) = label(size, color).apply {
+            gravity = Gravity.RIGHT; setPadding(0, 0, 0, 0); setSingleLine()
+            setShadowLayer(dp(2).toFloat(), 0f, dp(1).toFloat(), Color.BLACK)
+        }
+        scoreStack.addView(scoreLabel(10f).apply { text = "SCORE"; letterSpacing = .15f; setTypeface(null, Typeface.BOLD) })
+        stats = scoreLabel(24f).apply { typeface = Typeface.create("sans-serif-condensed", Typeface.BOLD) }
+        scoreStack.addView(stats)
+        levelText = scoreLabel(11f, gold).apply { setTypeface(null, Typeface.BOLD); setPadding(0, dp(2), 0, 0) }
+        scoreStack.addView(levelText)
+        hud.addView(scoreStack, LinearLayout.LayoutParams(-2, -2))
+        safe.addView(hud, FrameLayout.LayoutParams(-1, -2, Gravity.TOP).apply { setMargins(dp(16), dp(8), dp(16), 0) })
+
+        val mint = Color.rgb(140, 227, 205)
+        healthMeter = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+        healthMeter.addView(ImageView(this).apply {
+            setImageDrawable(ControlIcon("heart", mint))
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, LinearLayout.LayoutParams(dp(16), dp(16)).apply { bottomMargin = dp(8) })
+        val track = FrameLayout(this).apply {
+            background = panel(Color.argb(210, 16, 44, 52), 4)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        }
+        healthBar = View(this).apply { background = panel(mint, 4) }
+        track.addView(healthBar, FrameLayout.LayoutParams(-1, dp(96), Gravity.BOTTOM))
+        healthMeter.addView(track, LinearLayout.LayoutParams(dp(8), dp(96)))
+        healthText = label(12f).apply {
+            setTypeface(null, Typeface.BOLD); setSingleLine(); gravity = Gravity.CENTER
+            setPadding(0, dp(8), 0, 0)
+            setShadowLayer(dp(2).toFloat(), 0f, dp(1).toFloat(), Color.BLACK)
+        }
+        healthMeter.addView(healthText)
+        safe.addView(healthMeter, FrameLayout.LayoutParams(-2, -2, Gravity.LEFT or Gravity.CENTER_VERTICAL).apply { leftMargin = dp(12) })
 
         notice = label(14f, gold).apply {
             text = ""; visibility = View.GONE; gravity = Gravity.CENTER
             setPadding(dp(16), dp(8), dp(16), dp(8))
             background = panel(Color.argb(245, 16, 44, 52))
         }
-        safe.addView(notice, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(112) })
+        safe.addView(notice, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(88) })
         controls = FrameLayout(this)
         fireButton = thumbButton("FIRE", "fire", true) { if (!fireTouch) game.fire(); fireTouch = false }.apply {
             contentDescription = "Fire cannon. Hold for continuous fire."
@@ -219,7 +234,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             safeTop = bars.top
             safe.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             overlay.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-            water.contentInsets = Rect(bars.left, bars.top + dp(104), bars.right + rightInset, bars.bottom + bottomInset)
+            water.contentInsets = Rect(bars.left, bars.top + dp(76), bars.right + rightInset, bars.bottom + bottomInset)
             water.invalidate()
             insets
         }
@@ -230,14 +245,15 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         stats.contentDescription = "Score ${game.score}"
         healthText.text = "${game.health}%"
         healthText.contentDescription = "Hull ${game.health} percent"
-        healthBar.progress = game.health
-        healthBar.progressTintList = ColorStateList.valueOf(if (game.health <= 25) Color.rgb(255, 160, 180) else Color.rgb(140, 227, 205))
+        healthBar.layoutParams = healthBar.layoutParams.apply { height = dp(96) * game.health / 100 }
+        healthBar.backgroundTintList = ColorStateList.valueOf(if (game.health <= 25) Color.rgb(255, 160, 180) else Color.rgb(140, 227, 205))
         levelText.text = "LEVEL ${game.level}"
         val playing = game.status == Status.PLAYING
         fireButton.isEnabled = playing
         water.importantForAccessibility = if (playing) View.IMPORTANT_FOR_ACCESSIBILITY_YES else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         pauseButton.isEnabled = playing || game.status == Status.PAUSED
         hud.visibility = if (playing) View.VISIBLE else View.GONE
+        healthMeter.visibility = if (playing) View.VISIBLE else View.GONE
         controls.visibility = if (playing) View.VISIBLE else View.GONE
         if (!playing) notice.visibility = View.GONE
         for (button in listOf(fireButton, pauseButton)) {

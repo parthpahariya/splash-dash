@@ -1,0 +1,107 @@
+name: iOS
+
+# iOS CI/CD only; Android has its own workflow.
+# Checks run on iOS changes. An `ios-vX.Y.Z` tag (or a manual run) archives a signed
+# release and, when IOS_PUBLISH_ENABLED is true, uploads it to App Store Connect/TestFlight.
+on:
+  # Every pull request runs this workflow so "Check iOS app" always reports, even when
+  # branch protection requires it; the check itself is skipped when no iOS files changed.
+  pull_request:
+  push:
+    branches: [codex/splash-dash-2026-11-25]
+    tags: ['ios-v*']
+    paths:
+      - mobile/ios/**
+      - ci/ios.sh
+      - .github/workflows/ios.yml
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version name (X.Y.Z)
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect iOS changes
+    if: github.ref_type != 'tag' && github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ios: ${{ steps.diff.outputs.ios }}
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'pull_request'
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Pushes are already limited to iOS paths by the trigger.
+          if [[ "$GITHUB_EVENT_NAME" != pull_request ]]; then
+            echo ios=true >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "$BASE...$HEAD" \
+              | grep -qE '^(mobile/ios/|ci/ios\.sh$|\.github/workflows/ios\.yml$)'; then
+            echo ios=true >> "$GITHUB_OUTPUT"
+          else
+            echo ios=false >> "$GITHUB_OUTPUT"
+          fi
+
+  check:
+    name: Check iOS app
+    needs: changes
+    # Skipped (which counts as passing) when a pull request changes no iOS files.
+    # Release runs check in the same job, avoiding a second macOS runner.
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Use the newest Xcode
+        run: |
+          xcode=$(ls -d /Applications/Xcode_*.app | grep -Eiv 'beta|release_candidate' | sort -V | tail -1)
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+      - run: bash ci/ios.sh check
+
+  release:
+    name: Release to TestFlight
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 60
+    environment: app-store
+    concurrency:
+      group: app-store
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Use the newest Xcode
+        run: |
+          xcode=$(ls -d /Applications/Xcode_*.app | grep -Eiv 'beta|release_candidate' | sort -V | tail -1)
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+      - run: bash ci/ios.sh check
+      - run: bash ci/ios.sh release
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          IOS_DIST_P12_BASE64: ${{ secrets.IOS_DIST_P12_BASE64 }}
+          IOS_DIST_P12_PASSWORD: ${{ secrets.IOS_DIST_P12_PASSWORD }}
+          IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_KEY_BASE64: ${{ secrets.ASC_KEY_BASE64 }}
+          IOS_PUBLISH_ENABLED: ${{ vars.IOS_PUBLISH_ENABLED }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-release
+          path: dist/ios/
+          retention-days: 30

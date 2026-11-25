@@ -41,6 +41,8 @@ final class Game {
   static let lanes = [211.0, 337.0, 463.0, 589.0]
   static let playerY = 665.0
   static let jumpDuration = 1.15
+  /// Jumps are unlimited; after landing the boat needs this long before it can jump again.
+  static let jumpRecharge = 2.0
   let random: () -> Double
   var onEvent: (String) -> Void = { _ in }
   var status = GameStatus.ready
@@ -48,8 +50,8 @@ final class Game {
   var lane = 1
   var x = lanes[1]
   var tilt = 0.0
-  var jumps = 2
   var jumpTime = 0.0
+  var jumpCooldown = 0.0
   var invincible = 0.0
   var fireCooldown = 0.0
   var firing = false
@@ -69,6 +71,11 @@ final class Game {
   var score: Int { Int(floor(distance * 2)) + bonus }
   var speed: Double { 125 + Double(min(145, (level - 1) * 17)) }
   var jumping: Bool { jumpTime > 0 }
+  var jumpReady: Bool { !jumping && jumpCooldown <= 0 }
+  /// 0 right after takeoff, 1 when the next jump is available.
+  var jumpCharge: Double {
+    1 - min(1, jumpCooldown / (Self.jumpDuration + Self.jumpRecharge))
+  }
   init(random: @escaping () -> Double = { Double.random(in: 0..<1) }) { self.random = random }
   func reset() {
     status = .playing
@@ -76,8 +83,8 @@ final class Game {
     lane = 1
     x = Self.lanes[1]
     tilt = 0
-    jumps = 2
     jumpTime = 0
+    jumpCooldown = 0
     invincible = 0
     fireCooldown = 0
     firing = false
@@ -102,9 +109,9 @@ final class Game {
     }
   }
   @discardableResult func jump() -> Bool {
-    guard status == .playing, !jumping, jumps > 0 else { return false }
-    jumps -= 1
+    guard status == .playing, jumpReady else { return false }
     jumpTime = Self.jumpDuration
+    jumpCooldown = Self.jumpDuration + Self.jumpRecharge
     onEvent("jump")
     return true
   }
@@ -197,6 +204,7 @@ final class Game {
     x += dx * (1 - exp(-15 * dt))
     tilt += (max(-0.23, min(0.23, dx / 170)) - tilt) * min(1, dt * 12)
     jumpTime = max(0, jumpTime - dt)
+    jumpCooldown = max(0, jumpCooldown - dt)
     invincible = max(0, invincible - dt)
     fireCooldown = max(0, fireCooldown - dt)
     if firing { fire() }

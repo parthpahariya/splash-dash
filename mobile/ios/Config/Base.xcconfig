@@ -1,0 +1,5 @@
+// Shared build settings that ci/ios.sh passes to xcodebuild with -xcconfig.
+// Apple team for release signing. Team IDs are not secret.
+// Keep it above the Local include so a developer's Local.xcconfig can still override it.
+DEVELOPMENT_TEAM = 4VJ3Z5FXLP
+#include? "Local.xcconfig"

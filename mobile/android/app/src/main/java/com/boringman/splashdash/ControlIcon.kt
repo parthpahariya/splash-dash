@@ -1,4 +1,4 @@
-package com.parthpahariya.splashdash
+package com.boringman.splashdash
 
 import android.graphics.*
 import android.graphics.drawable.Drawable
@@ -18,6 +18,17 @@ class ControlIcon(private val symbol: String, color: Int) : Drawable() {
         canvas.scale(bounds.width() / 24f, bounds.height() / 24f)
         fun line(x: Float, y: Float, x2: Float, y2: Float) = canvas.drawLine(x, y, x2, y2, paint)
         when (symbol) {
+            "heart" -> {
+                val heart = Path().apply {
+                    moveTo(12f, 20f)
+                    cubicTo(1f, 13f, 1f, 3f, 8f, 4f)
+                    cubicTo(10f, 4f, 11f, 5f, 12f, 7f)
+                    cubicTo(13f, 5f, 14f, 4f, 16f, 4f)
+                    cubicTo(23f, 3f, 23f, 13f, 12f, 20f)
+                    close()
+                }
+                canvas.drawPath(heart, paint)
+            }
             "pause" -> { line(8f, 5f, 8f, 19f); line(16f, 5f, 16f, 19f) }
             "fire" -> {
                 canvas.drawCircle(12f, 12f, 7f, paint)

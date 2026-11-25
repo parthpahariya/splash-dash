@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 
 IOS_DIR = mobile/ios
-IOS_BUNDLE_ID ?= com.parthpahariya.splashdash
+IOS_BUNDLE_ID ?= com.boringman.splashdash
 IOS_DERIVED_DATA ?= $(IOS_DIR)/build/DerivedData
 IOS_CONFIG ?= $(IOS_DIR)/Config/Local.xcconfig
 IOS_APP = $(IOS_DERIVED_DATA)/Build/Products/Debug-iphoneos/WakeRunner.app
