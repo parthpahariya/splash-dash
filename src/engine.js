@@ -175,7 +175,7 @@ export class Game {
       }
       if (!e.dead && Math.abs(e.x - this.x) < 43 && Math.abs(e.y - PLAYER_Y) < (e.type === 'pirate' ? 64 : 42)) {
         if (e.type === 'heart') {
-          this.health = Math.min(MAX_HEALTH, this.health + 25);
+          this.health = Math.min(MAX_HEALTH, this.health + 10);
           this.heartsCollected++;
           this.bonus += 50;
           this.burst(e.x, e.y, '#ffabc0');

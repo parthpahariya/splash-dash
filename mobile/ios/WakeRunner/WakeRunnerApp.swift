@@ -91,7 +91,7 @@ final class GameModel: ObservableObject {
     switch event {
     case "damage": notice = Notice("Hull hit — change lanes!", "exclamationmark.triangle.fill", .danger)
     case "jump": notice = Notice("Catching some air", "arrow.up.circle.fill", .gold)
-    case "heart": notice = Notice("+25 hull · +50 points", "heart.fill", .heart)
+    case "heart": notice = Notice("+10 hull · +50 points", "heart.fill", .heart)
     case "sink": notice = Notice("Pirate sunk · +250 points", "flag.checkered", .gold)
     case "level": notice = Notice("Level \(game.level) · rougher waters", "wind", .mint)
     case "over":
@@ -593,7 +593,7 @@ struct GameScreen: View {
       ("arrow.up.circle.fill", Theme.gold, "Jump",
        "Swipe up any time to jump over rocks, ships and cannonballs for 1.15 seconds. Jumps never run out: after landing, you can jump again two seconds later."),
       ("heart.fill", Theme.heart, "Hull",
-       "Hearts repair 25 hull. Rocks cost 25 hull, cannonballs 15, and pirate collisions 30."),
+       "Hearts repair 10 hull. Rocks cost 25 hull, cannonballs 15, and pirate collisions 30."),
       ("wind", Theme.mint, "Levels",
        "Every 300 meters the water gets faster. Pause is at the top left; sound and help are in the pause menu."),
     ]

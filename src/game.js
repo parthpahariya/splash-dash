@@ -47,7 +47,7 @@ const game = new Game({ onEvent(event) {
   switch (event.type) {
     case 'fire': tone(190, .07, 'triangle', .025, 75); break;
     case 'damage': tone(110, .22, 'sawtooth', .055, 45); notice(`HULL HIT  −${event.amount}`); break;
-    case 'heart': tone(620, .18, 'sine', .07, 940); notice('A LITTLE LOVE  +25 HEALTH'); break;
+    case 'heart': tone(620, .18, 'sine', .07, 940); notice('A LITTLE LOVE  +10 HEALTH'); break;
     case 'jump': tone(240, .3, 'sine', .05, 720); notice('CATCHING SOME AIR'); break;
     case 'hit': tone(260, .08, 'square', .025, 120); break;
     case 'sink': tone(90, .28, 'sawtooth', .06, 40); notice('PIRATE SUNK  +250'); break;

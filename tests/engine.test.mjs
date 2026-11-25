@@ -30,9 +30,11 @@ test('pirate shots damage the boat and jumping avoids rocks and shots', () => {
   assert.equal(jumping.jumping, false); assert.equal(jumping.jump(), true); advance(jumping, 1.2);
   assert.equal(jumping.jump(), false);
 });
-test('heart pickups restore health without exceeding 100', () => {
-  const g = fresh(); g.health = 90; g.spawn('heart', 1, PLAYER_Y); g.update(.01);
-  assert.equal(g.health, 100); assert.equal(g.heartsCollected, 1); assert.equal(g.bonus, 50);
+test('heart pickups restore 10 health without exceeding 100', () => {
+  for (const health of [60, 95, 100]) {
+    const g = fresh(); g.health = health; g.spawn('heart', 1, PLAYER_Y); g.update(.01);
+    assert.equal(g.health, Math.min(100, health + 10)); assert.equal(g.heartsCollected, 1); assert.equal(g.bonus, 50);
+  }
 });
 test('automatic pickups are hearts only and never replenish jump charges', () => {
   for (const roll of [.1, .9]) {

@@ -140,7 +140,7 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
             }
             if (!e.dead && abs(e.x - x) < 43 && abs(e.y - PLAYER_Y) < (if (e.kind == Kind.PIRATE) 64 else 42)) {
                 when (e.kind) {
-                    Kind.HEART -> { health = min(100, health + 25); heartsCollected++; bonus += 50; e.dead = true; onEvent("heart") }
+                    Kind.HEART -> { health = min(100, health + 10); heartsCollected++; bonus += 50; e.dead = true; onEvent("heart") }
                     else -> if (!jumping && damage(if (e.kind == Kind.ROCK) 25 else 30)) e.dead = true
                 }
                 if (status == Status.OVER) return

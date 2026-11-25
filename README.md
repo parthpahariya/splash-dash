@@ -38,7 +38,7 @@ On phones, the game fits the available screen height with large touch controls, 
 - Pirates aim each cannonball at your boat's position when they fire. Change lanes or press Up Arrow to jump over incoming shots.
 - Cannon launches flash and leave a visible trail. During a jump, cannonballs pass underneath the raised boat and continue offscreen without dealing damage.
 - Damage gives a short grace period so one collision cannot drain the whole hull.
-- Hearts restore 25 health, up to 100, and award 50 points.
+- Hearts restore 10 health, up to 100, and award 50 points.
 - Each voyage has two jumps. Jumps last 1.15 seconds and clear hazards; pickups do not replenish jump charges.
 - Hearts stay separated from each other and from rocks. A pickup can appear above a rock in the same lane, with a clear gap.
 - Pirate ships never overlap rocks: rocks use lanes without pirates, and new pirates enter above existing rocks with a safe gap that grows as they scroll.

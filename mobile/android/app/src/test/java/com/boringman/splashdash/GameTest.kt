@@ -17,9 +17,11 @@ class GameTest {
         assertEquals(1, g.jumps)
     }
     @Test fun heartsRepairWithoutReplenishingJumps() {
-        val g = game(); g.health = 90; g.spawn(Kind.HEART, 1, Game.PLAYER_Y); g.update(0.0)
-        assertEquals(100, g.health); assertEquals(50, g.score); assertEquals(1, g.heartsCollected)
-        assertEquals(2, g.jumps)
+        for (health in listOf(60, 95, 100)) {
+            val g = game(); g.health = health; g.spawn(Kind.HEART, 1, Game.PLAYER_Y); g.update(0.0)
+            assertEquals(minOf(100, health + 10), g.health); assertEquals(50, g.score); assertEquals(1, g.heartsCollected)
+            assertEquals(2, g.jumps)
+        }
     }
     @Test fun automaticPickupsAreHeartsOnlyAndNeverRestoreJumps() {
         for (roll in listOf(.1, .9)) {

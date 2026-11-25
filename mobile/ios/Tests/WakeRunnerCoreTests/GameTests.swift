@@ -52,14 +52,16 @@ final class GameTests: XCTestCase {
     XCTAssertFalse(g.jumpReady)
   }
   func testHeartsRepair() {
-    let g = game()
-    g.health = 90
-    g.spawn(.heart, lane: 1, y: Game.playerY)
-    g.update(0)
-    XCTAssertEqual(g.health, 100)
-    XCTAssertEqual(g.score, 50)
-    XCTAssertEqual(g.heartsCollected, 1)
-    XCTAssertTrue(g.jumpReady)
+    for health in [60, 95, 100] {
+      let g = game()
+      g.health = health
+      g.spawn(.heart, lane: 1, y: Game.playerY)
+      g.update(0)
+      XCTAssertEqual(g.health, min(100, health + 10))
+      XCTAssertEqual(g.score, 50)
+      XCTAssertEqual(g.heartsCollected, 1)
+      XCTAssertTrue(g.jumpReady)
+    }
   }
   func testAutomaticPickupsAreHeartsOnly() {
     for roll in [0.1, 0.9] {

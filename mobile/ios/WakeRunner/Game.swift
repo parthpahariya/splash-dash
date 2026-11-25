@@ -245,7 +245,7 @@ final class Game {
       if !e.dead && abs(e.x - x) < 43 && abs(e.y - Self.playerY) < (e.kind == .pirate ? 64 : 42) {
         switch e.kind {
         case .heart:
-          health = min(100, health + 25)
+          health = min(100, health + 10)
           heartsCollected += 1
           bonus += 50
           e.dead = true
