@@ -68,7 +68,7 @@ try:
     run('shell', 'input', 'keyevent', 'KEYCODE_DPAD_UP')
     run('shell', 'input', 'keyevent', 'KEYCODE_P')
     wait_for('Back to the water')
-    assert find('Steer left') is None
+    assert find('Fire cannon. Hold for continuous fire.') is None
     tap('Back to the water')
     # The activity must release firing and pause when leaving the foreground.
     run('shell', 'input', 'keyevent', 'KEYCODE_HOME')

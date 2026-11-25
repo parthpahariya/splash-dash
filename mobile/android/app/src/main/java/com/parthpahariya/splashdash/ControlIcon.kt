@@ -18,9 +18,6 @@ class ControlIcon(private val symbol: String, color: Int) : Drawable() {
         canvas.scale(bounds.width() / 24f, bounds.height() / 24f)
         fun line(x: Float, y: Float, x2: Float, y2: Float) = canvas.drawLine(x, y, x2, y2, paint)
         when (symbol) {
-            "left" -> { line(15f, 5f, 8f, 12f); line(8f, 12f, 15f, 19f) }
-            "right" -> { line(9f, 5f, 16f, 12f); line(16f, 12f, 9f, 19f) }
-            "jump" -> { line(12f, 20f, 12f, 4f); line(5f, 11f, 12f, 4f); line(12f, 4f, 19f, 11f) }
             "pause" -> { line(8f, 5f, 8f, 19f); line(16f, 5f, 16f, 19f) }
             "fire" -> {
                 canvas.drawCircle(12f, 12f, 7f, paint)

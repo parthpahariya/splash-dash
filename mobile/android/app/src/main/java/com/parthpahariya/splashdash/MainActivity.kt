@@ -41,10 +41,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
     private lateinit var startButton: Button
     private lateinit var pauseButton: Button
     private lateinit var soundButton: Button
-    private lateinit var leftButton: Button
-    private lateinit var rightButton: Button
     private lateinit var fireButton: Button
-    private lateinit var jumpButton: Button
     private var noticeUntil = 0L
     private var fireTouch = false
     private val ink = Color.rgb(16, 44, 52)
@@ -106,7 +103,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             }
             backgroundTintList = null
             background = RippleDrawable(ColorStateList.valueOf(Color.argb(90, 248, 238, 214)), shape, null)
-            val iconSize = dp(if (symbol == "jump") 20 else 24)
+            val iconSize = dp(24)
             val icon = ControlIcon(symbol, if (primary) ink else cream).apply { setBounds(0, 0, iconSize, iconSize) }
             if (title.isEmpty()) { textSize = 0f; includeFontPadding = false }
             setCompoundDrawables(null, icon, null, null)
@@ -119,7 +116,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
     }
     private fun buildUI() {
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        val sideInset = if (landscape) dp(160) else 0
+        val rightInset = if (landscape) dp(100) else 0
         val bottomInset = if (landscape) dp(16) else dp(112)
         val root = FrameLayout(this).apply { setBackgroundColor(Color.rgb(39, 127, 137)) }
         if (android.os.Build.VERSION.SDK_INT >= 30) {
@@ -170,14 +167,6 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         }
         safe.addView(notice, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(112) })
         controls = FrameLayout(this)
-        val steering = row().apply { gravity = Gravity.BOTTOM }
-        leftButton = thumbButton("", "left") { game.move(-1) }.apply { contentDescription = "Steer left" }
-        rightButton = thumbButton("", "right") { game.move(1) }.apply { contentDescription = "Steer right" }
-        steering.addView(leftButton, LinearLayout.LayoutParams(dp(56), dp(56)))
-        steering.addView(rightButton, LinearLayout.LayoutParams(dp(56), dp(56)).apply { leftMargin = dp(8) })
-        controls.addView(steering, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.LEFT))
-        val actions = row().apply { gravity = Gravity.BOTTOM }
-        jumpButton = thumbButton("2", "jump") { game.jump(); updateHUD() }.apply { contentDescription = "Jump (2)" }
         fireButton = thumbButton("FIRE", "fire", true) { if (!fireTouch) game.fire(); fireTouch = false }.apply {
             contentDescription = "Fire cannon. Hold for continuous fire."
             setOnTouchListener { _, e ->
@@ -189,9 +178,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
                 false
             }
         }
-        actions.addView(jumpButton, LinearLayout.LayoutParams(dp(56), dp(56)))
-        actions.addView(fireButton, LinearLayout.LayoutParams(dp(76), dp(76)).apply { leftMargin = dp(12) })
-        controls.addView(actions, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.RIGHT))
+        controls.addView(fireButton, FrameLayout.LayoutParams(dp(76), dp(76), Gravity.BOTTOM or Gravity.RIGHT))
         safe.addView(controls, FrameLayout.LayoutParams(-1, dp(88), Gravity.BOTTOM).apply { setMargins(dp(16), 0, dp(16), dp(12)) })
 
         overlay = FrameLayout(this).apply { setBackgroundColor(Color.argb(235, 16, 44, 52)) }
@@ -213,7 +200,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         options.addView(soundButton, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(8) })
         options.addView(button("How to play") { showHelp() }, LinearLayout.LayoutParams(0, -2, 1f))
         center.addView(options, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
-        center.addView(label(13f, gold).apply { text = "Swipe to steer · hold Fire to shoot\nTap a pirate to aim · Jump to evade"; gravity = Gravity.CENTER })
+        center.addView(label(13f, gold).apply { text = "Swipe to steer · hold Fire to shoot\nTap a pirate to aim · swipe up to jump"; gravity = Gravity.CENTER })
         scroller.addView(center); overlay.addView(scroller); root.addView(overlay)
         var safeTop = 0
         hud.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
@@ -233,7 +220,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             safeTop = bars.top
             safe.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             overlay.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-            water.contentInsets = Rect(bars.left + sideInset, bars.top + dp(104), bars.right + sideInset, bars.bottom + bottomInset)
+            water.contentInsets = Rect(bars.left, bars.top + dp(104), bars.right + rightInset, bars.bottom + bottomInset)
             water.invalidate()
             insets
         }
@@ -248,15 +235,13 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         healthBar.progressTintList = ColorStateList.valueOf(if (game.health <= 25) Color.rgb(255, 160, 180) else Color.rgb(140, 227, 205))
         levelText.text = "LEVEL ${game.level}"
         val playing = game.status == Status.PLAYING
-        leftButton.isEnabled = playing; rightButton.isEnabled = playing; fireButton.isEnabled = playing
-        jumpButton.isEnabled = playing && game.jumps > 0 && !game.jumping
-        jumpButton.text = "${game.jumps}"
-        jumpButton.contentDescription = "Jump (${game.jumps})"
+        fireButton.isEnabled = playing
+        water.importantForAccessibility = if (playing) View.IMPORTANT_FOR_ACCESSIBILITY_YES else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         pauseButton.isEnabled = playing || game.status == Status.PAUSED
         hud.visibility = if (playing) View.VISIBLE else View.GONE
         controls.visibility = if (playing) View.VISIBLE else View.GONE
         if (!playing) notice.visibility = View.GONE
-        for (button in listOf(leftButton, rightButton, fireButton, jumpButton, pauseButton)) {
+        for (button in listOf(fireButton, pauseButton)) {
             button.alpha = if (button.isEnabled) 1f else .45f
         }
         overlay.visibility = if (playing) View.GONE else View.VISIBLE
@@ -285,7 +270,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         if (game.status == Status.PLAYING) game.pause()
         updateHUD()
         AlertDialog.Builder(this).setTitle("Captain’s handbook")
-            .setMessage("Use Left and Right or swipe across the water to steer.\n\nHold Fire to shoot ahead. Tap a pirate to aim across lanes; two hits sink it for 250 points.\n\nJump clears rocks, ships and cannonballs for 1.15 seconds. Blue pickups add a jump, up to five.\n\nHearts repair 25 hull. Rocks cost 25 hull, cannonballs 15, ships 30.\n\nEvery 300 meters the water gets faster. Sound starts off. Your best score is saved on this device.")
+            .setMessage("Swipe left or right across the water to steer. Swipe up to jump. Screen-reader actions on the waterway also let you steer and jump.\n\nHold Fire to shoot ahead. Tap a pirate to aim across lanes; two hits sink it for 250 points.\n\nJump clears rocks, ships and cannonballs for 1.15 seconds. Blue pickups add a jump, up to five.\n\nHearts repair 25 hull. Rocks cost 25 hull, cannonballs 15, ships 30.\n\nEvery 300 meters the water gets faster. Sound starts off. Your best score is saved on this device.")
             .setPositiveButton("Got it", null).show()
     }
     private fun saveBest() { best = max(best, game.score); prefs.edit().putInt("best", best).apply() }

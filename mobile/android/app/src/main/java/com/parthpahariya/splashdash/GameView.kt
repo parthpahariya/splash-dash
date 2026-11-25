@@ -4,6 +4,9 @@ import android.content.Context
 import android.graphics.*
 import android.view.MotionEvent
 import android.view.View
+import android.view.HapticFeedbackConstants
+import android.view.accessibility.AccessibilityNodeInfo
+import android.os.Bundle
 import kotlin.math.*
 
 /** Native Canvas renderer; all artwork is drawn locally at any screen density. */
@@ -20,11 +23,15 @@ class GameView(context: Context, val game: Game) : View(context) {
     private var downY = 0f
     private var anchor = 0f
     private var swiped = false
+    private var verticalSwipe = false
+    private val steerLeftAction = R.id.action_steer_left
+    private val steerRightAction = R.id.action_steer_right
+    private val jumpAction = R.id.action_jump
     var reducedMotion = false
     var contentInsets = Rect()
 
     init {
-        contentDescription = "Four-lane waterway. Swipe to steer or tap a pirate to aim. Steering, fire and jump buttons are below."
+        contentDescription = "Four-lane waterway. Swipe left or right to steer, swipe up to jump, or tap a pirate to aim. Custom actions also let you steer and jump."
         isClickable = true
         clipToOutline = true
     }
@@ -143,10 +150,22 @@ class GameView(context: Context, val game: Game) : View(context) {
     }
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { downX = event.x; downY = event.y; anchor = event.x; swiped = false; return true }
+            MotionEvent.ACTION_DOWN -> { downX = event.x; downY = event.y; anchor = event.x; swiped = false; verticalSwipe = false; return true }
             MotionEvent.ACTION_MOVE -> {
                 val threshold = 28 * resources.displayMetrics.density
-                if (abs(event.x - anchor) > threshold) { game.move(if (event.x > anchor) 1 else -1); anchor = event.x; swiped = true }
+                val dx = event.x - downX
+                val dy = event.y - downY
+                if (!swiped && max(abs(dx), abs(dy)) > threshold) {
+                    swiped = true
+                    verticalSwipe = abs(dy) > abs(dx)
+                    if (verticalSwipe && dy < 0 && game.jump()) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                }
+                if (swiped && !verticalSwipe && abs(event.x - anchor) > threshold) {
+                    val lane = game.lane
+                    game.move(if (event.x > anchor) 1 else -1)
+                    if (game.lane != lane) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    anchor = event.x
+                }
             }
             MotionEvent.ACTION_UP -> {
                 if (!swiped && hypot((event.x-downX).toDouble(), (event.y-downY).toDouble()) < 20 * resources.displayMetrics.density) {
@@ -158,6 +177,22 @@ class GameView(context: Context, val game: Game) : View(context) {
             }
         }
         return true
+    }
+    override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
+        super.onInitializeAccessibilityNodeInfo(info)
+        val state = "Lane ${game.lane + 1} of 4. Jump charges: ${game.jumps}."
+        if (android.os.Build.VERSION.SDK_INT >= 30) info.stateDescription = state else info.text = state
+        info.addAction(AccessibilityNodeInfo.AccessibilityAction(steerLeftAction, "Steer left"))
+        info.addAction(AccessibilityNodeInfo.AccessibilityAction(steerRightAction, "Steer right"))
+        info.addAction(AccessibilityNodeInfo.AccessibilityAction(jumpAction, "Jump"))
+    }
+    override fun performAccessibilityAction(action: Int, arguments: Bundle?): Boolean {
+        if (game.status == Status.PLAYING) when (action) {
+            steerLeftAction -> { game.move(-1); return true }
+            steerRightAction -> { game.move(1); return true }
+            jumpAction -> return game.jump()
+        }
+        return super.performAccessibilityAction(action, arguments)
     }
     override fun performClick(): Boolean { super.performClick(); return true }
 }

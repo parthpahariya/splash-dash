@@ -8,6 +8,7 @@ struct GameSurface: UIViewRepresentable {
   @Environment(\.accessibilityReduceMotion) private var reducedMotion
   func makeUIView(context: Context) -> WaterView { WaterView(game: game) }
   func updateUIView(_ view: WaterView, context: Context) {
+    view.accessibilityValue = "Lane \(game.lane + 1) of 4. Jump charges: \(game.jumps)."
     view.contentInsets = contentInsets
     view.reducedMotion = reducedMotion
     view.setNeedsDisplay()
@@ -24,6 +25,7 @@ final class WaterView: UIView {
   private var down = CGPoint.zero
   private var anchor = 0.0
   private var swiped = false
+  private var verticalSwipe = false
   init(game: Game) {
     self.game = game
     super.init(frame: .zero)
@@ -32,8 +34,26 @@ final class WaterView: UIView {
     isAccessibilityElement = true
     accessibilityLabel = "Four-lane waterway"
     accessibilityHint =
-      "Use the steering, fire and jump buttons to play. Swipe across the water to steer or tap a pirate to aim."
+      "Swipe left or right to steer, swipe up to jump, or tap a pirate to aim. Custom actions also let you steer and jump."
+    accessibilityCustomActions = [
+      UIAccessibilityCustomAction(name: "Steer left", target: self, selector: #selector(steerLeft)),
+      UIAccessibilityCustomAction(
+        name: "Steer right", target: self, selector: #selector(steerRight)),
+      UIAccessibilityCustomAction(
+        name: "Jump", target: self, selector: #selector(jumpFromAccessibility)),
+    ]
   }
+  @objc private func steerLeft() -> Bool {
+    guard game.status == .playing else { return false }
+    game.move(-1)
+    return true
+  }
+  @objc private func steerRight() -> Bool {
+    guard game.status == .playing else { return false }
+    game.move(1)
+    return true
+  }
+  @objc private func jumpFromAccessibility() -> Bool { game.jump() }
   required init?(coder: NSCoder) { fatalError("Use init(game:)") }
   override func draw(_ rect: CGRect) {
     guard let c = UIGraphicsGetCurrentContext() else { return }
@@ -191,15 +211,28 @@ final class WaterView: UIView {
     down = p
     anchor = p.x
     swiped = false
+    verticalSwipe = false
   }
   override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
     guard let p = touches.first?.location(in: self) else { return }
-    if abs(p.x - anchor) > 28 {
-      game.move(p.x > anchor ? 1 : -1)
-      anchor = p.x
+    let dx = p.x - down.x
+    let dy = p.y - down.y
+    if !swiped {
+      guard max(abs(dx), abs(dy)) > 28 else { return }
       swiped = true
+      verticalSwipe = abs(dy) > abs(dx)
+      if verticalSwipe && dy < 0 && game.jump() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+      }
+    }
+    if !verticalSwipe && abs(p.x - anchor) > 28 {
+      let lane = game.lane
+      game.move(p.x > anchor ? 1 : -1)
+      if game.lane != lane { UISelectionFeedbackGenerator().selectionChanged() }
+      anchor = p.x
     }
   }
+
   override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
     guard let p = touches.first?.location(in: self), !swiped, hypot(p.x - down.x, p.y - down.y) < 20
     else { return }

@@ -172,9 +172,9 @@ struct GameScreen: View {
           game: model.game, frame: model.frame,
           contentInsets: UIEdgeInsets(
             top: geometry.safeAreaInsets.top + (typeSize >= .xxLarge ? 120 : 100),
-            left: geometry.safeAreaInsets.leading + (landscape ? 160 : 0),
+            left: geometry.safeAreaInsets.leading,
             bottom: geometry.safeAreaInsets.bottom + (landscape ? 16 : 112),
-            right: geometry.safeAreaInsets.trailing + (landscape ? 160 : 0))
+            right: geometry.safeAreaInsets.trailing + (landscape ? 100 : 0))
         )
         .ignoresSafeArea()
         .accessibilityHidden(model.game.status != .playing)
@@ -234,45 +234,9 @@ struct GameScreen: View {
   }
 
   private var controls: some View {
-    HStack(alignment: .bottom, spacing: 12) {
-      HStack(spacing: 8) {
-        Button {
-          steer(-1)
-        } label: {
-          Image(systemName: "chevron.left").font(.title2.weight(.heavy)).frame(
-            width: 56, height: 56)
-        }.accessibilityLabel("Steer left")
-        Button {
-          steer(1)
-        } label: {
-          Image(systemName: "chevron.right").font(.title2.weight(.heavy)).frame(
-            width: 56, height: 56)
-        }.accessibilityLabel("Steer right")
-      }.buttonStyle(GameControlStyle())
-      Spacer(minLength: 0)
-      HStack(alignment: .bottom, spacing: 12) {
-        Button {
-          if model.game.jump() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
-        } label: {
-          VStack(spacing: 2) {
-            Image(systemName: "arrow.up").font(.title3.weight(.heavy))
-            Text("\(model.game.jumps)").font(.caption.weight(.bold)).monospacedDigit()
-          }.frame(width: 56, height: 56)
-        }.buttonStyle(GameControlStyle())
-          .accessibilityLabel("Jump (\(model.game.jumps))")
-          .accessibilityHint("Jump over hazards. \(model.game.jumps) charges remaining.")
-          .disabled(model.game.jumps == 0 || model.game.jumping)
-        HoldFireButton(game: model.game).frame(width: 76, height: 76)
-      }
-    }
-    .frame(maxWidth: 760).frame(maxWidth: .infinity)
-    .accessibilityIdentifier("game-controls")
-  }
-
-  private func steer(_ direction: Int) {
-    let lane = model.game.lane
-    model.game.move(direction)
-    if model.game.lane != lane { UISelectionFeedbackGenerator().selectionChanged() }
+    HoldFireButton(game: model.game).frame(width: 76, height: 76)
+      .frame(maxWidth: .infinity, alignment: .trailing)
+      .accessibilityIdentifier("game-controls")
   }
 
   private var menu: some View {
@@ -327,7 +291,7 @@ struct GameScreen: View {
             }
           }.buttonStyle(MenuButtonStyle(primary: false))
           if model.game.status == .ready {
-            Text("Swipe to steer · hold Fire to shoot\nTap a pirate to aim · Jump to evade")
+            Text("Swipe to steer · hold Fire to shoot\nTap a pirate to aim · swipe up to jump")
               .font(.footnote).multilineTextAlignment(.center)
           }
         }.padding(24).frame(maxWidth: 440).frame(maxWidth: .infinity)
@@ -361,12 +325,14 @@ struct GameScreen: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 20) {
           Text("Captain’s handbook").font(.largeTitle.bold())
-          Text("Use the left and right thumb controls or swipe across the water to steer.")
+          Text(
+            "Swipe left or right across the water to steer. Swipe up to jump. VoiceOver actions on the waterway also let you steer and jump."
+          )
           Text(
             "Hold Fire to shoot ahead. Tap a pirate to aim across lanes. Two hits sink it for 250 points."
           )
           Text(
-            "Jump clears rocks, ships and cannonballs for 1.15 seconds. The number on Jump shows your remaining charges. Blue pickups add a jump, up to five."
+            "Jump clears rocks, ships and cannonballs for 1.15 seconds. Each upward swipe uses one jump. Blue pickups add a jump, up to five."
           )
           Text(
             "Hearts repair 25 hull. Rocks cost 25 hull, cannonballs 15, and pirate collisions 30.")
