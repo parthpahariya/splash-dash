@@ -86,6 +86,9 @@ final class WaterView: UIView {
     let visibleWidth = bounds.width / worldScale
     let visibleHeight = bounds.height / worldScale
     let visibleMaxY = visibleMinY + visibleHeight
+    // Spawn above and despawn below the physical screen edges, not the gameplay insets.
+    game.visibleTop = visibleMinY
+    game.visibleBottom = visibleMaxY
     c.saveGState()
     c.translateBy(x: offsetX, y: offsetY)
     c.scaleBy(x: worldScale, y: worldScale)

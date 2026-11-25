@@ -50,6 +50,12 @@ final class Game {
   var lane = 1
   var x = lanes[1]
   var tilt = 0.0
+  /// World-space y of the screen's top and bottom edges, set by the renderer. Objects enter
+  /// just above the top edge and leave just below the bottom edge, so nothing pops in or out
+  /// mid-screen. Defaults match the 800-unit playfield for tests and headless use.
+  var visibleTop = 0.0
+  var visibleBottom = 800.0
+  var spawnY: Double { visibleTop - 80 }
   var jumpTime = 0.0
   var jumpCooldown = 0.0
   var invincible = 0.0
@@ -159,22 +165,41 @@ final class Game {
     }
     return true
   }
+  /// A lane never holds more than this many rocks back to back.
+  static let maxRocksInARow = 2
+  /// Rocks closer than this (world units) belong to the same run. Hearts and ships between them
+  /// do not break a run, because they can be collected or sunk, leaving the rocks adjacent.
+  static let rockRunGap = 360.0
+  /// Rocks in the run a new rock would join at the top of `lane`.
+  func rockStreak(in lane: Int) -> Int {
+    var edge = spawnY
+    var count = 0
+    for rock in entities.filter({ !$0.dead && $0.lane == lane && $0.kind == .rock })
+      .sorted(by: { $0.y < $1.y })
+    {
+      guard rock.y - edge < Self.rockRunGap else { break }
+      count += 1
+      edge = rock.y
+    }
+    return count
+  }
   @discardableResult func spawn(
-    _ kind: EntityKind, lane requestedLane: Int? = nil, y requestedY: Double = -80
+    _ kind: EntityKind, lane requestedLane: Int? = nil, y requestedY: Double? = nil
   ) -> Entity? {
     var lane = max(0, min(3, requestedLane ?? Int(random() * 4)))
-    var y = requestedY
+    var y = requestedY ?? spawnY
     if kind == .rock || kind == .heart {
       guard
         let available = (0..<4).map({ (lane + $0) % 4 }).first(where: { candidate in
           !entities.contains { !$0.dead && $0.lane == candidate && $0.kind == .pirate }
+            && (kind != .rock || rockStreak(in: candidate) < Self.maxRocksInARow)
         })
       else { return nil }
       lane = available
     }
     if (kind == .rock || kind == .pirate)
       && entities.contains(where: {
-        !$0.dead && ($0.kind == .rock || $0.kind == .pirate) && $0.y < 60 && $0.lane == lane
+        !$0.dead && ($0.kind == .rock || $0.kind == .pirate) && $0.y < spawnY + 140 && $0.lane == lane
       })
     {
       return nil
@@ -184,7 +209,9 @@ final class Game {
       for e in neighbors where e.kind == .rock || e.kind == .heart { y = min(y, e.y - 120) }
     }
     for e in neighbors.sorted(by: { $0.y > $1.y }) where abs(e.y - y) < 120 { y = e.y - 120 }
-    let entity = Entity(id: nextID, kind: kind, lane: lane, y: y, cooldown: 1.5 + random())
+    // A pirate's first shot comes within a second of entering the screen.
+    let entity = Entity(
+      id: nextID, kind: kind, lane: lane, y: y, cooldown: kind == .pirate ? random() : 1.5 + random())
     nextID += 1
     entities.append(entity)
     return entity
@@ -217,7 +244,7 @@ final class Game {
     }
     if pickupTimer <= 0 {
       if random() < 0.58 { spawn(.heart) }
-      pickupTimer = 4 + random() * 3
+      pickupTimer = 10 + random() * 5  // a new heart chance every 10–15 s
     }
     if pirateTimer <= 0 {
       spawn(.pirate)
@@ -227,12 +254,13 @@ final class Game {
       e.y += speed * dt * (e.kind == .pirate ? 0.44 : 1)
       e.hit = max(0, e.hit - dt)
       e.flash = max(0, e.flash - dt)
-      if e.kind == .pirate && e.y > 45 && e.y < Self.playerY - 90 && !e.dead {
+      // Pirates may fire at any time while on screen, starting the moment they sail in.
+      if e.kind == .pirate && e.y > visibleTop && !e.dead {
         e.cooldown -= dt
         if e.cooldown <= 0 {
           let shotDX = x - e.x
           let dy = Self.playerY - e.y - 43
-          let d = hypot(shotDX, dy)
+          let d = max(1, hypot(shotDX, dy))
           let velocity = Double(265 + level * 8)
           bullets.append(
             Bullet(
@@ -254,7 +282,7 @@ final class Game {
         }
         if status == .over { return }
       }
-      if e.y > 900 { e.dead = true }
+      if e.y > visibleBottom + 100 { e.dead = true }
     }
     for b in bullets {
       b.x += b.vx * dt
@@ -282,7 +310,9 @@ final class Game {
           break
         }
       }
-      if b.x < -30 || b.x > 830 || b.y < -30 || b.y > 850 { b.dead = true }
+      if b.x < -30 || b.x > 830 || b.y < visibleTop - 30 || b.y > visibleBottom + 50 {
+        b.dead = true
+      }
     }
     entities.removeAll { $0.dead }
     bullets.removeAll { $0.dead }

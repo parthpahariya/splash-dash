@@ -250,6 +250,9 @@ struct ClayButtonStyle: ButtonStyle {
   }
 }
 
+/// Scores always show at least six digits (000637) so the HUD keeps a steady width.
+func scoreDigits(_ score: Int) -> String { String(format: "%06d", max(0, score)) }
+
 // MARK: - Screen
 
 struct GameScreen: View {
@@ -370,7 +373,7 @@ struct GameScreen: View {
       Text("LEVEL \(model.game.level)")
         .font(.caption2.weight(.black)).tracking(1.2)
         .foregroundStyle(Theme.gold)
-      Text(model.game.score.formatted())
+      Text(scoreDigits(model.game.score))
         .font(.title3.weight(.black)).monospacedDigit()
         .fixedSize().contentTransition(.identity)
     }
@@ -495,7 +498,7 @@ struct GameScreen: View {
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(Theme.mint, in: Capsule())
         }
-        Text(model.game.score.formatted())
+        Text(scoreDigits(model.game.score))
           .font(.system(size: 52, weight: .black, design: .rounded)).monospacedDigit()
           .foregroundStyle(Theme.gold)
           .minimumScaleFactor(0.6).lineLimit(1)
@@ -524,7 +527,7 @@ struct GameScreen: View {
 
   private var bestChip: some View {
     Label {
-      Text("Personal best  \(model.best.formatted())").monospacedDigit()
+      Text("Personal best  \(scoreDigits(model.best))").monospacedDigit()
     } icon: {
       Image(systemName: "trophy.fill").foregroundStyle(Theme.gold)
     }

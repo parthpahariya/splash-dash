@@ -44,6 +44,77 @@ final class GameTests: XCTestCase {
       XCTAssertEqual(g.jumpCharge, 1, accuracy: 0.001)
     }
   }
+  func testObjectsEnterAndLeaveAtScreenEdges() {
+    let g = game()
+    g.visibleTop = -220
+    g.visibleBottom = 1060
+    let rock = g.spawn(.rock, lane: 0)!
+    XCTAssertEqual(rock.y, -300)
+    rock.y = 1000
+    g.update(0)
+    XCTAssertTrue(g.entities.contains { $0 === rock }, "still on screen above the bottom edge")
+    rock.y = 1170
+    g.update(0)
+    XCTAssertFalse(g.entities.contains { $0 === rock })
+    g.bullets.append(Bullet(x: 337, y: -100, vx: 0, vy: 0, enemy: false))
+    g.update(0)
+    XCTAssertEqual(g.bullets.count, 1, "shots keep flying to the top edge")
+  }
+  func testAtMostTwoRocksInARowPerLane() {
+    let g = game()
+    g.spawn(.rock, lane: 1, y: 300)
+    g.spawn(.rock, lane: 1, y: 100)
+    XCTAssertEqual(g.rockStreak(in: 1), 2)
+    XCTAssertNotEqual(g.spawn(.rock, lane: 1)?.lane, 1, "a third rock moves to another lane")
+    g.spawn(.heart, lane: 1, y: -100)
+    XCTAssertEqual(g.rockStreak(in: 1), 2, "a heart can be collected, so it does not break the run")
+    let spaced = game()
+    spaced.spawn(.rock, lane: 2, y: 700)
+    spaced.spawn(.rock, lane: 2, y: 100)
+    XCTAssertEqual(spaced.rockStreak(in: 2), 1, "a wide gap starts a new run")
+    XCTAssertEqual(spaced.spawn(.rock, lane: 2)?.lane, 2)
+  }
+  func testSeededRunNeverStacksThreeRocks() {
+    var seed: UInt64 = 7
+    let g = Game(random: {
+      seed = seed &* 6364136223846793005 &+ 1442695040888963407
+      return Double(seed >> 11) / Double(1 << 53)
+    })
+    g.reset()
+    g.invincible = .infinity
+    for _ in 0..<12000 {
+      g.update(0.05)
+      g.invincible = .infinity
+      for lane in 0..<4 {
+        let rocks = g.entities.filter { $0.lane == lane && $0.kind == .rock }.map(\.y).sorted()
+        var run = 0
+        for (i, y) in rocks.enumerated() {
+          run = i > 0 && y - rocks[i - 1] < Game.rockRunGap ? run + 1 : 1
+          XCTAssertLessThanOrEqual(run, 2)
+        }
+      }
+    }
+  }
+  func testPiratesFireFromEntryUntilTheyLeave() {
+    let g = game()
+    g.visibleTop = -200
+    let pirate = g.spawn(.pirate, lane: 0)!
+    XCTAssertLessThan(pirate.y, g.visibleTop)
+    while pirate.y <= g.visibleTop { g.update(0.02) }
+    XCTAssertFalse(g.bullets.contains { $0.enemy }, "no shots from off screen")
+    var t = 0.0
+    while !g.bullets.contains(where: { $0.enemy }) {
+      g.update(0.02)
+      t += 0.02
+    }
+    XCTAssertLessThanOrEqual(t, 1.02, "first shot within a second of entering")
+    // Still firing after passing the player's row.
+    pirate.y = Game.playerY + 60
+    pirate.cooldown = 0
+    g.bullets.removeAll()
+    g.update(0.01)
+    XCTAssertTrue(g.bullets.contains { $0.enemy })
+  }
   func testJumpRechargePausesWithGame() {
     let g = game()
     XCTAssertTrue(g.jump())
