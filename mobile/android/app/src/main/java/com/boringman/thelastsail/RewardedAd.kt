@@ -19,7 +19,7 @@ import android.widget.*
 /**
  * A rewarded ad that continues a finished voyage. [onReward] runs only when the ad was watched
  * to the end; closing early calls [onClose] alone. Replace [PlaceholderRewardedAds] with a real
- * ad network here (and PlaceholderAdView in WakeRunnerApp.swift on iOS).
+ * ad network here (and PlaceholderAdView in TheLastSailApp.swift on iOS).
  */
 interface RewardedAds {
     /** False when no ad can be shown; the continue button is hidden. */

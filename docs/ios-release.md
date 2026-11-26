@@ -35,9 +35,9 @@ The individual App Store Connect API key is used only for uploads and needs no i
 
 | Name | Kind | Value |
 | --- | --- | --- |
-| `IOS_DIST_P12_BASE64` | Secret | `base64 -i WakeRunner_Distribution.p12 \| tr -d '\n'` |
+| `IOS_DIST_P12_BASE64` | Secret | `base64 -i TheLastSail_Distribution.p12 \| tr -d '\n'` |
 | `IOS_DIST_P12_PASSWORD` | Secret | Password used when exporting the `.p12` |
-| `IOS_PROFILE_BASE64` | Secret | `base64 -i WakeRunner_AppStore.mobileprovision \| tr -d '\n'` |
+| `IOS_PROFILE_BASE64` | Secret | `base64 -i TheLastSail_AppStore.mobileprovision \| tr -d '\n'` |
 | `ASC_KEY_ID` | Secret | Individual API key ID; required only for uploads |
 | `ASC_KEY_BASE64` | Secret | `base64 -i ApiKey_XXXXXXXXXX.p8 \| tr -d '\n'`; required only for uploads |
 | `IOS_PUBLISH_ENABLED` | Variable | `true` |

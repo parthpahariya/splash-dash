@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import WakeRunnerCore
+@testable import TheLastSailCore
 
 final class GameTests: XCTestCase {
   private func game() -> Game {

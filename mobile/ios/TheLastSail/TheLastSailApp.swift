@@ -3,7 +3,7 @@ import QuartzCore
 import SwiftUI
 
 @main
-struct WakeRunnerApp: App {
+struct TheLastSailApp: App {
   @StateObject private var model = GameModel()
   @Environment(\.scenePhase) private var scenePhase
   var body: some Scene {
@@ -28,6 +28,7 @@ private final class FrameProxy: NSObject {
 final class GameModel: ObservableObject {
   let game = Game()
   @Published var frame = 0
+  // The "wake-runner-" keys keep the game's original name so players' saved best score and sound setting survive.
   @Published var best = UserDefaults.standard.integer(forKey: "wake-runner-best")
   @Published var sound = UserDefaults.standard.bool(forKey: "wake-runner-sound")
   @Published var notice: Notice?

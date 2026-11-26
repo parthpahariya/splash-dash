@@ -1,10 +1,10 @@
 // swift-tools-version: 5.9
 import PackageDescription
 let package = Package(
-    name: "WakeRunnerCore",
-    products: [.library(name: "WakeRunnerCore", targets: ["WakeRunnerCore"])],
+    name: "TheLastSailCore",
+    products: [.library(name: "TheLastSailCore", targets: ["TheLastSailCore"])],
     targets: [
-        .target(name: "WakeRunnerCore", path: "WakeRunner", exclude: ["WakeRunnerApp.swift", "GameSurface.swift", "Info.plist", "Assets.xcassets", "PrivacyInfo.xcprivacy"], sources: ["Game.swift"]),
-        .testTarget(name: "WakeRunnerCoreTests", dependencies: ["WakeRunnerCore"], path: "Tests/WakeRunnerCoreTests")
+        .target(name: "TheLastSailCore", path: "TheLastSail", exclude: ["TheLastSailApp.swift", "GameSurface.swift", "Info.plist", "Assets.xcassets", "PrivacyInfo.xcprivacy"], sources: ["Game.swift"]),
+        .testTarget(name: "TheLastSailCoreTests", dependencies: ["TheLastSailCore"], path: "Tests/TheLastSailCoreTests")
     ]
 )

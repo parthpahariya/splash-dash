@@ -10,7 +10,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Claymorphism-inspired toy-boat theme shared with the iOS app (Theme in WakeRunnerApp.swift):
+ * Claymorphism-inspired toy-boat theme shared with the iOS app (Theme in TheLastSailApp.swift):
  * chunky ink outlines, hard drop shadows and warm gold for actions and rewards on a tropical sea.
  */
 object Clay {

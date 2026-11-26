@@ -5,7 +5,7 @@ Two native apps share the same four-lane simulation, UI and features:
 | Platform | Language and UI | Minimum version | Project |
 | --- | --- | --- | --- |
 | Android | Kotlin, Android Views and Canvas | Android 7.0 / API 24 | `android/` |
-| iPhone and iPad | Swift, SwiftUI and Core Graphics | iOS / iPadOS 15 | `ios/WakeRunner.xcodeproj` |
+| iPhone and iPad | Swift, SwiftUI and Core Graphics | iOS / iPadOS 15 | `ios/TheLastSail.xcodeproj` |
 
 Both apps run entirely offline. They include swipe steering and upward-swipe jumps, held cannon fire, tap-to-target pirate shots, heart pickups, increasing difficulty, pause/resume, optional sound (off initially), and a best score stored on the device. The app pauses when backgrounded and waits for an explicit resume. Portrait and landscape are supported; screen-reader custom actions provide steering and jumping without swipes.
 
@@ -29,9 +29,9 @@ The debug APK can be installed directly on an Android phone after allowing insta
 
 ## iOS
 
-Open `ios/WakeRunner.xcodeproj` in Xcode 15 or later. Choose the **WakeRunner** scheme and an iPhone or iPad simulator, then press Run. There are no third-party packages to install.
+Open `ios/TheLastSail.xcodeproj` in Xcode 15 or later. Choose the **TheLastSail** scheme and an iPhone or iPad simulator, then press Run. There are no third-party packages to install.
 
-To run on a physical device, select your Apple development team under **Signing & Capabilities** for WakeRunner, connect the device, and press Run. Change the bundle ID if your team needs a unique identifier. A simulator build is not an installable iPhone IPA; device installs and TestFlight/App Store distribution require Apple signing and provisioning.
+To run on a physical device, select your Apple development team under **Signing & Capabilities** for TheLastSail, connect the device, and press Run. Change the bundle ID if your team needs a unique identifier. A simulator build is not an installable iPhone IPA; device installs and TestFlight/App Store distribution require Apple signing and provisioning.
 
 Alternatively, deploy to a physical iPhone from the repository root using the same Makefile workflow as `meal-manager` (requires Xcode 15 or later):
 
@@ -47,14 +47,14 @@ Sign in to your Apple account in Xcode, connect and unlock the iPhone, and enabl
 Use `make ios-device IOS_DEVICE=<UDID>` to select a particular phone. You can also override `IOS_BUNDLE_ID` (if your team needs a unique app ID), `IOS_DERIVED_DATA`, or `IOS_CONFIG`. For example:
 
 ```sh
-make ios-device IOS_DEVICE=<UDID> IOS_BUNDLE_ID=com.example.wakerunner
+make ios-device IOS_DEVICE=<UDID> IOS_BUNDLE_ID=com.example.thelastsail
 ```
 
 Build for a simulator without a signing account:
 
 ```sh
-xcodebuild -project mobile/ios/WakeRunner.xcodeproj \
-  -scheme WakeRunner -configuration Debug -sdk iphonesimulator \
+xcodebuild -project mobile/ios/TheLastSail.xcodeproj \
+  -scheme TheLastSail -configuration Debug -sdk iphonesimulator \
   -derivedDataPath mobile/ios/build CODE_SIGNING_ALLOWED=NO build
 ```
 
@@ -67,8 +67,8 @@ swift test --package-path mobile/ios
 Run the iOS interaction tests (replace the destination with an installed simulator from `xcrun simctl list devices available`):
 
 ```sh
-xcodebuild -project mobile/ios/WakeRunner.xcodeproj \
-  -scheme WakeRunner -destination 'platform=iOS Simulator,name=iPhone 18 Pro' \
+xcodebuild -project mobile/ios/TheLastSail.xcodeproj \
+  -scheme TheLastSail -destination 'platform=iOS Simulator,name=iPhone 18 Pro' \
   -derivedDataPath mobile/ios/build CODE_SIGNING_ALLOWED=NO test
 ```
 
@@ -76,7 +76,7 @@ For distribution, configure your signing team, choose a device destination, and 
 
 ## Gameplay and architecture
 
-`android/app/src/main/java/com/boringman/thelastsail/Game.kt` and `ios/WakeRunner/Game.swift` contain platform-independent simulation code. Both use the same 800-unit coordinate system, collision thresholds, timings, damage, scoring, spawn spacing, and speed curve. Random spawning can differ between platforms. Platform renderers supply artwork, touch input, and native UI; Android uses Choreographer and iOS uses CADisplayLink for frame timing.
+`android/app/src/main/java/com/boringman/thelastsail/Game.kt` and `ios/TheLastSail/Game.swift` contain platform-independent simulation code. Both use the same 800-unit coordinate system, collision thresholds, timings, damage, scoring, spawn spacing, and speed curve. Random spawning can differ between platforms. Platform renderers supply artwork, touch input, and native UI; Android uses Choreographer and iOS uses CADisplayLink for frame timing.
 
 Native engine tests cover steering, damage grace and jump protection, heart healing without jump replenishment, automatic heart spawning, two-hit sinking, targeted fire, aimed enemy shots, airborne cannonball avoidance, pausing, lethal-frame ordering, levels/reset, spawn spacing, and a seeded ten-minute run checking object separation. iOS also has interaction tests for starting, steering, jumping, held fire, pausing, backgrounding, help, and landscape controls. These do not replace playtesting on physical devices or establish that the real-time visual game is fully playable with a screen reader.
 

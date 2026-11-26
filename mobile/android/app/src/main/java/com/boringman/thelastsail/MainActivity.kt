@@ -25,7 +25,7 @@ import android.widget.*
 import kotlin.math.max
 import kotlin.math.min
 
-/** Mirrors the SwiftUI GameScreen in WakeRunnerApp.swift: clay HUD, menu card and handbook. */
+/** Mirrors the SwiftUI GameScreen in TheLastSailApp.swift: clay HUD, menu card and handbook. */
 class MainActivity : Activity(), Choreographer.FrameCallback {
     private val game = Game()
     /** Swap for a real ad network; see RewardedAd.kt. */
@@ -34,6 +34,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
     }
     /** Back pauses a running voyage instead of leaving the app (Android 13+ uses this callback). */
     private var backCallback: OnBackInvokedCallback? = null
+    // Keeps the game's original "wake-runner" name so players' saved best score and sound setting survive.
     private val prefs by lazy { getSharedPreferences("wake-runner", MODE_PRIVATE) }
     private var best = 0
     private var sound = false
