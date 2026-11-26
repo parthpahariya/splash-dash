@@ -36,6 +36,8 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
     private val prefs by lazy { getSharedPreferences("wake-runner", MODE_PRIVATE) }
     private var best = 0
     private var sound = false
+    /** Treasures claimed by beating the Kraken, kept on this device. */
+    private var treasures = 0
     private var tone: ToneGenerator? = null
     private var active = false
     private var previousFrame = 0L
@@ -61,10 +63,15 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
     private lateinit var fireFace: ClayDrawable
     private lateinit var menu: FrameLayout
     private lateinit var menuCard: LinearLayout
+    private lateinit var journey: LinearLayout
+    private lateinit var journeyStart: ImageView
+    private lateinit var journeyLabel: TextView
+    private lateinit var journeyTrack: JourneyTrack
+    private lateinit var introSkip: View
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
-        best = prefs.getInt("best", 0); sound = prefs.getBoolean("sound", false)
+        best = prefs.getInt("best", 0); sound = prefs.getBoolean("sound", false); treasures = prefs.getInt("treasures", 0)
         // Recreating a process restores a safe menu, never a partially running frame.
         game.onEvent = { event ->
             if (event == "over") saveBest()
@@ -75,7 +82,14 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
                 "sink" -> notice("${game.lastSunkName} sunk · +${game.lastSunkReward} points", "flag", Clay.gold)
                 "level" -> notice("Level ${game.level} · rougher waters", "wind", Clay.mint)
                 "revive" -> notice("Second wind · ${Game.REVIVE_HEALTH} hull", "heart", Clay.mint)
+                "kraken" -> notice("The Kraken rises! Fire at its head", "warning", Clay.danger)
+                "krakenRage" -> notice("The Kraken is enraged!", "warning", Clay.danger)
+                "krakenDefeated" -> notice("The Kraken sinks · +${Game.TREASURE_BONUS} points", "crown", Clay.gold)
                 "over" -> if (::water.isInitialized) water.announceForAccessibility("Voyage complete. Score ${game.score}.")
+                "won" -> {
+                    saveBest(); treasures++; prefs.edit().putInt("treasures", treasures).apply()
+                    if (::water.isInitialized) water.announceForAccessibility("Treasure found! Score ${game.score}.")
+                }
             }
             if (sound && event in listOf("fire", "damage", "heart", "jump", "sink")) {
                 if (tone == null) tone = runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 35) }.getOrNull()
@@ -168,6 +182,8 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         scoreCard = buildScoreCard()
         top.addView(scoreCard, LinearLayout.LayoutParams(-2, -2))
         hud.addView(top, LinearLayout.LayoutParams(-1, -2))
+        journey = buildJourney()
+        hud.addView(journey, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
 
         toastIcon = icon("heart", Clay.gold, 17)
         toastText = text(15f, weight = 800).apply { gravity = Gravity.CENTER }
@@ -186,6 +202,14 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
 
         menu = buildMenu(landscape)
         root.addView(menu, FrameLayout.LayoutParams(-1, -1))
+        // During the opening scene the whole screen skips it; TalkBack users can skip it too.
+        introSkip = View(this).apply {
+            isClickable = true; isFocusable = true; asButton(this)
+            contentDescription = "Skip intro and set sail"
+            setOnClickListener { game.skipIntro(); updateHUD() }
+            visibility = View.GONE
+        }
+        root.addView(introSkip, FrameLayout.LayoutParams(-1, -1))
 
         root.setOnApplyWindowInsetsListener { _, insets ->
             val bars = if (Build.VERSION.SDK_INT >= 30) {
@@ -200,7 +224,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             menu.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             val big = resources.configuration.fontScale >= 1.3f
             water.contentInsets = Rect(
-                bars.left, bars.top + dp(if (big) 84 else 72),
+                bars.left, bars.top + dp(if (big) 112 else 100),
                 bars.right + if (landscape) dp(112) else 0, bars.bottom + dp(if (landscape) 16 else 116))
             water.invalidate()
             insets
@@ -218,6 +242,38 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_FULLSCREEN
         }
         root.requestApplyInsets(); lastStatus = null; lastHullIcon = ""; noticeUntil = 0; updateHUD()
+    }
+
+    /** Harbour-to-treasure progress; during the fight it becomes the Kraken's health bar. */
+    private fun buildJourney(): LinearLayout {
+        journeyStart = icon("flag", Clay.creamMuted, 14)
+        journeyLabel = text(11f, weight = 900).apply { text = "KRAKEN"; letterSpacing = .11f; visibility = View.GONE }
+        journeyTrack = JourneyTrack(this)
+        return row(8).apply {
+            addView(journeyStart); addView(journeyLabel)
+            addView(journeyTrack, LinearLayout.LayoutParams(0, dp(14), 1f))
+            addView(icon("chest", Clay.gold, 15))
+            background = clay(Clay.surface, Clay.deep, 16)
+            setPadding(dp(12), dp(6), dp(12), dp(6) + depth)
+            isFocusable = true
+        }
+    }
+    private fun updateJourney() {
+        val k = game.kraken
+        if (k == null) {
+            journeyTrack.fraction = game.journeyProgress.toFloat(); journeyTrack.tint = Clay.gold; journeyTrack.showBoat = true
+            journeyLabel.visibility = View.GONE
+            journey.contentDescription = "Journey ${(game.journeyProgress * 100).toInt()} percent to the treasure"
+        } else {
+            journeyTrack.fraction = max(0, k.hp).toFloat() / Game.KRAKEN_HP
+            journeyTrack.tint = if (k.enraged) Clay.danger else Clay.mint; journeyTrack.showBoat = false
+            journeyLabel.visibility = View.VISIBLE
+            journey.contentDescription = "Kraken health ${max(0, k.hp)} of ${Game.KRAKEN_HP}"
+        }
+        val start = if (k == null) "flag" else "warning"
+        if (journeyStart.tag != start) {
+            journeyStart.setImageDrawable(ControlIcon(start, if (k == null) Clay.creamMuted else Clay.danger)); journeyStart.tag = start
+        }
     }
 
     private fun buildHullCard(): LinearLayout {
@@ -308,20 +364,23 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             menuCard.addView(view, lp)
         }
         add(text(12f, Clay.gold, 900).apply {
-            text = when (status) { Status.PAUSED -> "TAKE A BREATHER"; Status.OVER -> "VOYAGE COMPLETE"; else -> "THE OPEN WATER IS CALLING" }
+            text = when (status) {
+                Status.PAUSED -> "TAKE A BREATHER"; Status.OVER -> "VOYAGE COMPLETE"; Status.WON -> "THE KRAKEN IS DEFEATED"
+                else -> "SAIL 1,500 M TO THE TREASURE"
+            }
             letterSpacing = .13f
             background = capsule(Clay.alpha(Clay.ink, .85f))
             setPadding(dp(12), dp(6), dp(12), dp(6))
         })
         add(text(if (accessibleText) 34f else 42f, weight = 900).apply {
-            text = when (status) { Status.PAUSED -> "PAUSED"; Status.OVER -> "WHAT A\nVOYAGE!"; else -> "WAKE\nRUNNER" }
+            text = when (status) { Status.PAUSED -> "PAUSED"; Status.OVER -> "WHAT A\nVOYAGE!"; Status.WON -> "TREASURE\nFOUND!"; else -> "WAKE\nRUNNER" }
             gravity = Gravity.CENTER
             setLineSpacing(0f, .92f)
             setShadowLayer(.01f, 0f, dpf(4f), Clay.ink)
             if (Build.VERSION.SDK_INT >= 28) isAccessibilityHeading = true
             setPadding(0, dp(6), 0, dp(6))
         })
-        if (status == Status.OVER) {
+        if (status == Status.OVER || status == Status.WON) {
             val newBest = game.score > 0 && game.score >= best
             val results = column(14)
             val headline = column(2).apply { gravity = Gravity.CENTER_HORIZONTAL }
@@ -343,18 +402,25 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             results.addView(stats, LinearLayout.LayoutParams(-1, -2))
             add(results, LinearLayout.LayoutParams(-1, -2))
         }
-        add(row(6).apply {
-            addView(icon("trophy", Clay.gold, 16))
-            addView(text(15f, Clay.creamMuted, 800).apply { text = "Personal best  ${Clay.digits(best)}"; fontFeatureSettings = "tnum" })
+        add(column(6).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            addView(row(6).apply {
+                addView(icon("trophy", Clay.gold, 16))
+                addView(text(15f, Clay.creamMuted, 800).apply { text = "Personal best  ${Clay.digits(best)}"; fontFeatureSettings = "tnum" })
+            }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL })
+            if (treasures > 0) addView(row(6).apply {
+                addView(icon("chest", Clay.gold, 16))
+                addView(text(15f, Clay.creamMuted, 800).apply { text = "Treasures found  $treasures"; fontFeatureSettings = "tnum" })
+            }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL })
         })
         val canContinue = ads.isAvailable && game.canRevive
         if (canContinue) add(continueButton(), LinearLayout.LayoutParams(-1, -2))
         add(clayButton(
-            when (status) { Status.PAUSED -> "Back to the water"; Status.OVER -> "One more voyage"; else -> "Set sail" },
+            when (status) { Status.PAUSED -> "Back to the water"; Status.OVER -> "One more voyage"; Status.WON -> "Set sail again"; else -> "Set sail" },
             when (status) { Status.PAUSED -> "play"; Status.OVER -> "restart"; else -> "sailboat" },
             // After a game over the ad continue is the main action; a fresh voyage is secondary.
             primary = !canContinue, radius = 22, size = 20f, minHeight = 60,
-        ) { if (game.status == Status.PAUSED) game.pause() else game.reset(); updateHUD() }, LinearLayout.LayoutParams(-1, -2))
+        ) { if (game.status == Status.PAUSED) game.pause() else game.beginVoyage(); updateHUD() }, LinearLayout.LayoutParams(-1, -2))
         val options = if (accessibleText) column(12) else row(12)
         val soundButton = clayButton(if (sound) "Sound on" else "Sound off", if (sound) "speaker.on" else "speaker.off", radius = 16) {
             sound = !sound; prefs.edit().putBoolean("sound", sound).apply(); renderMenu()
@@ -425,6 +491,8 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
 
     private fun updateHUD() {
         val playing = game.status == Status.PLAYING
+        val intro = game.status == Status.INTRO
+        updateJourney()
         scoreText.text = Clay.digits(game.score)
         levelText.text = "LEVEL ${game.level}"
         scoreCard.contentDescription = "Score ${game.score}, level ${game.level}"
@@ -440,16 +508,18 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         water.importantForAccessibility = if (playing) View.IMPORTANT_FOR_ACCESSIBILITY_YES else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         if (lastStatus != game.status) {
             val first = lastStatus == null
+            if (!playing && !intro) renderMenu()
             if (!playing) {
-                renderMenu()
                 game.firing = false; fireFace.held = false
                 noticeUntil = 0; toast.animate().cancel(); toast.visibility = View.GONE
             }
             updateBackHandling(playing)
             reveal(hud, playing, first, 1f)
-            reveal(menu, !playing, first, .96f)
-            if (game.status == Status.OVER || game.status == Status.PAUSED) menu.announceForAccessibility(
-                if (game.status == Status.PAUSED) "Paused" else "What a voyage!")
+            reveal(menu, !playing && !intro, first, .96f)
+            introSkip.visibility = if (intro) View.VISIBLE else View.GONE
+            if (intro) introSkip.announceForAccessibility("Setting sail")
+            if (game.status == Status.OVER || game.status == Status.PAUSED || game.status == Status.WON) menu.announceForAccessibility(
+                when (game.status) { Status.PAUSED -> "Paused"; Status.WON -> "Treasure found!"; else -> "What a voyage!" })
             lastStatus = game.status
         }
         if (noticeUntil != 0L && System.currentTimeMillis() > noticeUntil) { noticeUntil = 0; hideNotice() }
@@ -505,6 +575,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             listOf("heart", Clay.heart, "Hull", "Hearts repair 10 hull. Rocks cost 25 hull; cannonballs cost 15, or 25 for Sharpshooter shots. Ramming a ship costs 30."),
             listOf("flag", Clay.gold, "Pirate fleet", "Scout 1 hull · Gunner 2 · Burst Raider 3 · Scattershot 3 · Sharpshooter 2 · Captain 10. New types arrive as levels increase."),
             listOf("warning", Clay.danger, "Read the attack", "Dodge aimed shots and three-shot bursts, find gaps in spreads, and use long reloads to attack. A Sharpshooter marks its aim before firing; move after the lock. Captains alternate bursts and spreads and attack faster at half health."),
+            listOf("chest", Clay.gold, "The treasure", "Sail 1,500 m to the treasure island. The Kraken guards it: dodge its tentacle slams and sweeps, jump the rocks it hurls, and fire at its head. It rages at half health. Beat it to claim the treasure and 5,000 points."),
             listOf("wind", Clay.mint, "Levels", "Every 300 meters the water gets faster. Pause is at the top left; sound and help are in the pause menu."),
         )
         val dialog = Dialog(this, android.R.style.Theme_Material_NoActionBar)
@@ -591,7 +662,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         if (!active) return
         val dt = if (previousFrame == 0L) 0.0 else (frameTimeNanos - previousFrame) / 1e9
         previousFrame = frameTimeNanos; game.update(dt)
-        if (game.status == Status.PLAYING) water.invalidate()
+        if (game.status == Status.PLAYING || game.status == Status.INTRO) water.invalidate()
         if ((game.status == Status.PLAYING && frameTimeNanos - lastHUD > 100_000_000) || lastStatus != game.status || (noticeUntil != 0L && System.currentTimeMillis() > noticeUntil)) {
             updateHUD(); lastHUD = frameTimeNanos
         }

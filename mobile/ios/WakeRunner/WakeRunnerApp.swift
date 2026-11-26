@@ -30,6 +30,8 @@ final class GameModel: ObservableObject {
   @Published var frame = 0
   @Published var best = UserDefaults.standard.integer(forKey: "wake-runner-best")
   @Published var sound = UserDefaults.standard.bool(forKey: "wake-runner-sound")
+  /// Treasures claimed by beating the Kraken, kept on this device.
+  @Published var treasures = UserDefaults.standard.integer(forKey: "wake-runner-treasures")
   @Published var notice: Notice?
   private var noticeUntil = 0.0
   private var displayLink: CADisplayLink?
@@ -67,10 +69,10 @@ final class GameModel: ObservableObject {
       notice = nil
       noticeUntil = 0
     }
-    if game.status == .playing { frame &+= 1 }
+    if game.status == .playing || game.status == .intro { frame &+= 1 }
   }
   func startOrResume() {
-    if game.status == .paused { game.pause() } else { game.reset() }
+    if game.status == .paused { game.pause() } else { game.beginVoyage() }
     notice = nil
     frame &+= 1
   }
@@ -88,6 +90,10 @@ final class GameModel: ObservableObject {
       UserDefaults.standard.set(best, forKey: "wake-runner-best")
     }
   }
+  func skipIntro() {
+    game.skipIntro()
+    frame &+= 1
+  }
   func toggleSound() {
     sound.toggle()
     UserDefaults.standard.set(sound, forKey: "wake-runner-sound")
@@ -100,18 +106,29 @@ final class GameModel: ObservableObject {
     case "sink": notice = Notice("\(game.lastSunkName) sunk · +\(game.lastSunkReward) points", "flag.checkered", .gold)
     case "level": notice = Notice("Level \(game.level) · rougher waters", "wind", .mint)
     case "revive": notice = Notice("Second wind · \(Game.reviveHealth) hull", "heart.fill", .mint)
+    case "kraken": notice = Notice("The Kraken rises! Fire at its head", "exclamationmark.triangle.fill", .danger)
+    case "krakenRage": notice = Notice("The Kraken is enraged!", "exclamationmark.triangle.fill", .danger)
+    case "krakenDefeated": notice = Notice("The Kraken sinks · +\(Game.treasureBonus) points", "crown.fill", .gold)
     case "over":
       saveBest()
       frame &+= 1
+    case "won":
+      saveBest()
+      treasures += 1
+      UserDefaults.standard.set(treasures, forKey: "wake-runner-treasures")
+      frame &+= 1
     default: break
     }
-    if ["damage", "jump", "heart", "sink", "level", "revive"].contains(event) {
+    if ["damage", "jump", "heart", "sink", "level", "revive", "kraken", "krakenRage", "krakenDefeated"].contains(event) {
       noticeUntil = CACurrentMediaTime() + 1.6
     }
     if sound && ["fire", "damage", "heart", "jump", "sink"].contains(event) { playTone(event) }
     if event == "over" {
       UIAccessibility.post(
         notification: .announcement, argument: "Voyage complete. Score \(game.score).")
+    }
+    if event == "won" {
+      UIAccessibility.post(notification: .announcement, argument: "Treasure found! Score \(game.score).")
     }
   }
   // Short synthesized WAV effects need no bundled or network audio assets.
@@ -322,16 +339,27 @@ struct GameScreen: View {
         GameSurface(
           game: model.game, frame: model.frame,
           contentInsets: UIEdgeInsets(
-            top: geometry.safeAreaInsets.top + (typeSize >= .xxLarge ? 84 : 72),
+            top: geometry.safeAreaInsets.top + (typeSize >= .xxLarge ? 112 : 100),
             left: geometry.safeAreaInsets.leading,
             bottom: geometry.safeAreaInsets.bottom + (landscape ? 16 : 116),
             right: geometry.safeAreaInsets.trailing + (landscape ? 112 : 0))
         )
         .ignoresSafeArea()
         .accessibilityHidden(model.game.status != .playing)
-        if model.game.status == .playing {
+        if model.game.status == .intro {
+          // The whole screen skips the intro; VoiceOver users can skip it too.
+          Color.clear
+            .contentShape(Rectangle())
+            .onTapGesture(perform: model.skipIntro)
+            .accessibilityElement()
+            .accessibilityLabel("Skip intro and set sail")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { model.skipIntro() }
+            .ignoresSafeArea()
+        } else if model.game.status == .playing {
           VStack(spacing: 0) {
             hud(landscape: landscape)
+            journeyBar.padding(.top, 8)
             if let notice = model.notice {
               toast(notice)
                 .padding(.top, 14)
@@ -386,6 +414,38 @@ struct GameScreen: View {
       if landscape { Spacer(minLength: 0) }
       scoreCard
     }
+  }
+
+  /// Harbour-to-treasure progress; during the fight it becomes the Kraken's health bar.
+  private var journeyBar: some View {
+    let k = model.game.kraken
+    let fraction = k.map { Double(max(0, $0.hp)) / Double(Game.krakenHP) } ?? model.game.journeyProgress
+    let tint = k == nil ? Theme.gold : (k!.enraged ? Theme.danger : Theme.mint)
+    return HStack(spacing: 8) {
+      Image(systemName: k == nil ? "flag.fill" : "exclamationmark.triangle.fill")
+        .font(.caption.weight(.black)).foregroundStyle(k == nil ? Theme.creamMuted : Theme.danger)
+      if k != nil { Text("KRAKEN").font(.caption2.weight(.black)).tracking(1.2) }
+      GeometryReader { g in
+        ZStack(alignment: .leading) {
+          Capsule().fill(Theme.ink.opacity(0.75))
+          Capsule().fill(tint).frame(width: max(fraction > 0 ? 8 : 0, (g.size.width - 4) * fraction)).padding(2)
+          if k == nil {
+            // The player's boat travelling along the route.
+            Circle().fill(Theme.cream).overlay(Circle().strokeBorder(Theme.ink, lineWidth: 2))
+              .frame(width: 14, height: 14)
+              .offset(x: max(0, (g.size.width - 14) * fraction))
+          }
+        }
+      }
+      .frame(height: 14)
+      Image(systemName: "shippingbox.fill").font(.caption.weight(.black)).foregroundStyle(Theme.gold)
+    }
+    .padding(.horizontal, 12).padding(.vertical, 6)
+    .clay(top: Theme.surface, fill: Theme.deep, radius: 16)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(
+      k.map { "Kraken health \(max(0, $0.hp)) of \(Game.krakenHP)" }
+        ?? "Journey \(Int(model.game.journeyProgress * 100)) percent to the treasure")
   }
 
   private var hullColor: Color {
@@ -484,7 +544,8 @@ struct GameScreen: View {
   // MARK: Menu
 
   private var status: GameStatus { model.game.status }
-  private var newBest: Bool { status == .over && model.game.score > 0 && model.game.score >= model.best }
+  private var finished: Bool { status == .over || status == .won }
+  private var newBest: Bool { finished && model.game.score > 0 && model.game.score >= model.best }
 
   private var menu: some View {
     ZStack {
@@ -496,20 +557,20 @@ struct GameScreen: View {
         VStack(spacing: 18) {
           Text(
             status == .ready
-              ? "THE OPEN WATER IS CALLING"
-              : status == .paused ? "TAKE A BREATHER" : "VOYAGE COMPLETE"
+              ? "SAIL 1,500 M TO THE TREASURE"
+              : status == .paused ? "TAKE A BREATHER" : status == .won ? "THE KRAKEN IS DEFEATED" : "VOYAGE COMPLETE"
           )
           .font(.caption.weight(.black)).tracking(1.6).foregroundStyle(Theme.gold)
           .padding(.horizontal, 12).padding(.vertical, 6)
           .background(Theme.ink.opacity(0.85), in: Capsule())
           title
-          if status == .over { results }
+          if finished { results }
           bestChip
           if canContinue { continueButton }
           Button(action: model.startOrResume) {
             Label(
               status == .paused
-                ? "Back to the water" : status == .over ? "One more voyage" : "Set sail",
+                ? "Back to the water" : status == .over ? "One more voyage" : status == .won ? "Set sail again" : "Set sail",
               systemImage: symbol(
                 status == .paused ? "play.fill" : status == .over ? "arrow.clockwise" : "sailboat.fill")
             )
@@ -539,7 +600,8 @@ struct GameScreen: View {
   }
 
   private var title: some View {
-    let text = status == .ready ? "WAKE\nRUNNER" : status == .paused ? "PAUSED" : "WHAT A\nVOYAGE!"
+    let text =
+      status == .ready ? "WAKE\nRUNNER" : status == .paused ? "PAUSED" : status == .won ? "TREASURE\nFOUND!" : "WHAT A\nVOYAGE!"
     return ZStack {
       Text(text).foregroundStyle(Theme.ink).offset(y: 4).accessibilityHidden(true)
       Text(text).foregroundStyle(Theme.cream)
@@ -616,10 +678,19 @@ struct GameScreen: View {
   }
 
   private var bestChip: some View {
-    Label {
-      Text("Personal best  \(scoreDigits(model.best))").monospacedDigit()
-    } icon: {
-      Image(systemName: symbol("trophy.fill")).foregroundStyle(Theme.gold)
+    VStack(spacing: 6) {
+      Label {
+        Text("Personal best  \(scoreDigits(model.best))").monospacedDigit()
+      } icon: {
+        Image(systemName: symbol("trophy.fill")).foregroundStyle(Theme.gold)
+      }
+      if model.treasures > 0 {
+        Label {
+          Text("Treasures found  \(model.treasures)").monospacedDigit()
+        } icon: {
+          Image(systemName: "shippingbox.fill").foregroundStyle(Theme.gold)
+        }
+      }
     }
     .font(.subheadline.weight(.heavy))
     .foregroundStyle(Theme.creamMuted)
@@ -691,6 +762,8 @@ struct GameScreen: View {
        "Scout 1 hull · Gunner 2 · Burst Raider 3 · Scattershot 3 · Sharpshooter 2 · Captain 10. New types arrive as levels increase."),
       ("exclamationmark.triangle.fill", Theme.danger, "Read the attack",
        "Dodge aimed shots and three-shot bursts, find gaps in spreads, and use long reloads to attack. A Sharpshooter marks its aim before firing; move after the lock. Captains alternate bursts and spreads and attack faster at half health."),
+      ("shippingbox.fill", Theme.gold, "The treasure",
+       "Sail 1,500 m to the treasure island. The Kraken guards it: dodge its tentacle slams and sweeps, jump the rocks it hurls, and fire at its head. It rages at half health. Beat it to claim the treasure and 5,000 points."),
       ("wind", Theme.mint, "Levels",
        "Every 300 meters the water gets faster. Pause is at the top left; sound and help are in the pause menu."),
     ]

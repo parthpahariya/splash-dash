@@ -1,7 +1,8 @@
 import Foundation
 
 // Pure Swift simulation. Coordinates and gameplay rules match Game.kt on Android.
-enum GameStatus { case ready, playing, paused, over }
+/// `intro` shows the treasure before a voyage; `won` means the treasure was claimed.
+enum GameStatus { case ready, intro, playing, paused, over, won }
 enum EntityKind { case rock, pirate, heart }
 enum PirateType: CaseIterable {
   case scout, gunner, burst, scatter, sniper, captain
@@ -12,7 +13,7 @@ enum PirateType: CaseIterable {
     case .burst: return ("Burst Raider", 3, "B990D4", 2, 350)
     case .scatter: return ("Scattershot", 3, "E69A53", 2, 350)
     case .sniper: return ("Sharpshooter", 2, "DF6472", 3, 300)
-    case .captain: return ("Pirate Captain", 10, "F3C75F", 5, 1500)
+    case .captain: return ("Pirate Captain", 10, "F3C75F", 4, 1500)
     }
   }
 }
@@ -62,11 +63,47 @@ final class Bullet {
     self.enemy = enemy
   }
 }
+/// The Leviathan that guards the treasure at the end of the journey.
+final class Kraken {
+  var y: Double
+  var hp = Game.krakenHP
+  var hit = 0.0
+  /// Seconds until the next attack once the previous one has finished.
+  var attackTimer = 1.2
+  var attackStep = 0
+  /// Lanes about to be slammed, and the seconds of warning left.
+  var warningLanes: [Int] = []
+  var warning = 0.0
+  /// Lanes a tentacle is slamming right now, and the seconds it stays down.
+  var slamLanes: [Int] = []
+  var slam = 0.0
+  /// Seconds left while it sinks after being defeated.
+  var dying = 0.0
+  var enraged: Bool { hp <= Game.krakenRageHP }
+  var surfaced: Bool { y >= Game.krakenY }
+  init(y: Double) { self.y = y }
+}
 final class Game {
   static let lanes = [211.0, 337.0, 463.0, 589.0]
   static let playerY = 665.0
   static let jumpDuration = 1.15
   static let pirateGap = 220.0
+  /// Metres from the harbour to the treasure island, where the Kraken waits.
+  static let journeyLength = 1500.0
+  static let krakenHP = 40
+  /// At or below this health the Kraken rages: two-lane slams and shorter warnings.
+  static let krakenRageHP = 20
+  /// World y of the Kraken's head once it has surfaced at the top of the lanes.
+  static let krakenY = 90.0
+  static let slamDamage = 30
+  static let slamDuration = 0.4
+  static let treasureBonus = 5000
+  /// Seconds of the opening treasure scene before each voyage.
+  static let introDuration = 3.5
+  /// Share of the intro spent on the home shore before the fast-forward out to sea.
+  static let introLandShare = 0.5
+  /// Seconds of sailing to the treasure after the Kraken sinks.
+  static let outroDuration = 3.0
   /// Jumps are unlimited; after landing the boat needs this long before it can jump again.
   static let jumpRecharge = 2.0
   /// Hull after watching an ad to continue a finished voyage.
@@ -106,6 +143,14 @@ final class Game {
   var heartsCollected = 0
   /// Times this voyage was continued after an ad, up to `maxRevives`.
   var revives = 0
+  /// The Kraken fight has begun; normal rocks and pirates stop.
+  var bossActive = false
+  var kraken: Kraken?
+  /// Seconds left in the opening scene (`intro`) and the sail to the treasure.
+  var introTime = 0.0
+  var outro = 0.0
+  /// 0 at the harbour, 1 at the treasure island.
+  var journeyProgress: Double { min(1, distance / Self.journeyLength) }
   var canRevive: Bool { status == .over && revives < Self.maxRevives }
   var revivesLeft: Int { max(0, Self.maxRevives - revives) }
   var entities: [Entity] = []
@@ -145,6 +190,10 @@ final class Game {
     piratesSunk = 0
     heartsCollected = 0
     revives = 0
+    bossActive = false
+    kraken = nil
+    introTime = 0
+    outro = 0
     entities = []
     bullets = []
     spawnTimer = 1.3
@@ -199,9 +248,91 @@ final class Game {
     firing = false
     entities.removeAll { $0.kind != .heart && $0.y > Self.playerY - Self.reviveClearance }
     bullets.removeAll { $0.enemy }
+    if let k = kraken {
+      k.warningLanes = []
+      k.warning = 0
+      k.slamLanes = []
+      k.slam = 0
+      k.attackTimer = 2
+    }
     revives += 1
     onEvent("revive")
     return true
+  }
+  /// Starts a new voyage with the opening treasure scene.
+  func beginVoyage() {
+    reset()
+    status = .intro
+    introTime = Self.introDuration
+  }
+  /// Ends the opening scene early (a tap) and starts sailing.
+  func skipIntro() {
+    guard status == .intro else { return }
+    introTime = 0
+    status = .playing
+  }
+  private func startBoss() {
+    bossActive = true
+    kraken = Kraken(y: -260)
+    onEvent("kraken")
+  }
+  /// The Kraken rises, then cycles slam, hurled rocks and sweep; it rages at half health.
+  private func updateKraken(_ k: Kraken, _ dt: Double) {
+    k.hit = max(0, k.hit - dt)
+    if k.dying > 0 {
+      k.dying = max(0, k.dying - dt)
+      if k.dying == 0 {
+        kraken = nil
+        // The sea clears as the boat sails up to the treasure island.
+        entities.removeAll()
+        bullets.removeAll()
+        outro = Self.outroDuration
+        onEvent("treasure")
+      }
+      return
+    }
+    if !k.surfaced {
+      k.y = min(Self.krakenY, k.y + 140 * dt)
+      return
+    }
+    if k.slam > 0 {
+      k.slam = max(0, k.slam - dt)
+      if k.slamLanes.contains(where: { abs(Self.lanes[$0] - x) < 43 }) { damage(Self.slamDamage) }
+      if k.slam == 0 { k.slamLanes = [] }
+      return
+    }
+    if k.warning > 0 {
+      k.warning = max(0, k.warning - dt)
+      if k.warning == 0 {
+        k.slamLanes = k.warningLanes
+        k.warningLanes = []
+        k.slam = Self.slamDuration
+        onEvent("slam")
+      }
+      return
+    }
+    k.attackTimer -= dt
+    if k.attackTimer > 0 { return }
+    let others = (0..<4).filter { $0 != lane }
+    switch k.attackStep % 3 {
+    case 0:  // Slam the player's lane (and a second lane when enraged).
+      k.warningLanes = [lane] + (k.enraged ? [others[min(2, Int(random() * 3))]] : [])
+    case 1:  // Hurl two rocks into clear lanes; jump them.
+      let y = k.y + 140
+      var open = (0..<4).filter { l in !entities.contains { !$0.dead && $0.lane == l && abs($0.y - y) < 120 } }
+      for _ in 0..<min(2, open.count) {
+        let l = open.remove(at: min(open.count - 1, Int(random() * Double(open.count))))
+        entities.append(Entity(id: nextID, kind: .rock, lane: l, y: y, cooldown: 1))
+        nextID += 1
+      }
+      onEvent("hurl")
+    default:  // Sweep every lane but one.
+      let safe = Int(random() * 4) % 4
+      k.warningLanes = (0..<4).filter { $0 != safe }
+    }
+    if !k.warningLanes.isEmpty { k.warning = k.enraged ? 0.7 : 1.0 }
+    k.attackStep += 1
+    k.attackTimer = k.enraged ? 1.4 : 2.0
   }
   func pause() {
     if status == .playing {
@@ -329,15 +460,37 @@ final class Game {
     }
   }
   func update(_ delta: Double) {
-    guard status == .playing else { return }
     let dt = max(0, min(0.05, delta))
+    if status == .intro {
+      elapsed += dt
+      // The water is calm at the shore, then rushes past as the boat sets sail.
+      let p = 1 - introTime / Self.introDuration
+      scroll += dt * speed * (p < Self.introLandShare ? 0.2 : 4)
+      introTime = max(0, introTime - dt)
+      if introTime == 0 { status = .playing }
+      return
+    }
+    guard status == .playing else { return }
     elapsed += dt
-    distance += dt * speed * 0.12
     scroll += dt * speed
-    let nextLevel = 1 + Int(floor(distance / 300))
-    if level != nextLevel {
-      level = nextLevel
-      onEvent("level")
+    if outro > 0 {
+      // Sailing up to the treasure island: nothing can hurt the boat now.
+      outro = max(0, outro - dt)
+      if outro == 0 {
+        status = .won
+        firing = false
+        onEvent("won")
+      }
+      return
+    }
+    if !bossActive {
+      distance = min(Self.journeyLength, distance + dt * speed * 0.12)
+      let nextLevel = 1 + Int(floor(min(distance, Self.journeyLength - 1) / 300))
+      if level != nextLevel {
+        level = nextLevel
+        onEvent("level")
+      }
+      if distance >= Self.journeyLength { startBoss() }
     }
     let dx = Self.lanes[lane] - x
     x += dx * (1 - exp(-15 * dt))
@@ -350,7 +503,8 @@ final class Game {
     spawnTimer -= dt
     pickupTimer -= dt
     pirateTimer -= dt
-    if spawnTimer <= 0 {
+    if let k = kraken { updateKraken(k, dt); if status == .over { return } }
+    if spawnTimer <= 0 && !bossActive {
       spawn(.rock)
       spawnTimer = max(0.9, 1.8 - Double(level) * 0.07) + random() * 0.5
     }
@@ -358,7 +512,7 @@ final class Game {
       if random() < 0.58 { spawn(.heart) }
       pickupTimer = 10 + random() * 5  // a new heart chance every 10–15 s
     }
-    if pirateTimer <= 0 {
+    if pirateTimer <= 0 && !bossActive {
       let type = choosePirate()
       if spawn(.pirate, pirateType: type) != nil && type == .captain { lastCaptainDistance = distance }
       pirateTimer = max(3, 7 - Double(level) * 0.35) + random() * 2
@@ -401,6 +555,23 @@ final class Game {
           if status == .over { return }
         }
       } else {
+        if let k = kraken, k.surfaced, k.dying == 0, b.y < k.y + 70, abs(b.x - 400) < 240 {
+          b.dead = true
+          k.hp -= 1
+          k.hit = 0.13
+          if k.hp <= 0 {
+            k.dying = 1.6
+            k.warningLanes = []
+            k.slamLanes = []
+            k.warning = 0
+            k.slam = 0
+            bonus += Self.treasureBonus
+            onEvent("krakenDefeated")
+          } else {
+            onEvent(k.hp == Self.krakenRageHP ? "krakenRage" : "hit")
+          }
+          continue
+        }
         for e in entities {
           if e.kind != .pirate || e.dead || abs(e.x - b.x) > 34 || abs(e.y - b.y) > 52 { continue }
           e.hp -= 1

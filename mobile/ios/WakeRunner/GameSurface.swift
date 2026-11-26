@@ -10,6 +10,7 @@ struct GameSurface: UIViewRepresentable {
   func updateUIView(_ view: WaterView, context: Context) {
     view.accessibilityValue =
       "Lane \(game.lane + 1) of 4. Jump \(game.jumpReady ? "ready" : "recharging")."
+      + (game.kraken.map { " Kraken health \(max(0, $0.hp)) of \(Game.krakenHP)." } ?? "")
     view.contentInsets = contentInsets
     view.reducedMotion = reducedMotion
     view.setNeedsDisplay()
@@ -128,13 +129,13 @@ final class WaterView: UIView {
       island(c, 800, y + 240, time)
     }
 
-    // Lane dividers scroll with the water to sell speed.
-    c.setLineDash(phase: CGFloat(-scroll.truncatingRemainder(dividingBy: 36)), lengths: [14, 22])
-    for i in 1...3 {
-      let x = Double(148 + i * 126)
-      line(c, x, visibleMinY, x, visibleMaxY, "FFFFFF", 3, alpha: 0.18)
+    // Journey's end: the treasure island (intro, sail-in and victory) and the Kraken guarding it.
+    let scene = sceneLayout(visibleMinY, visibleMaxY)
+    if let landBottom = scene.landBottom {
+      homeLand(c, visibleMinX - 60, visibleMinX + visibleWidth + 60, visibleMinY - 60, landBottom, time)
     }
-    c.setLineDash(phase: 0, lengths: [])
+    if let islandY = scene.islandY { treasureIsland(c, 400, islandY, time) }
+    if let k = game.kraken { krakenBody(c, k, time, visibleMaxY) }
 
     if game.status == .ready {
       rock(c, 211, 230, time)
@@ -176,21 +177,272 @@ final class WaterView: UIView {
         oval(c, b.x, b.y, 4, 5, "FFE08A")
       }
     }
+    if let k = game.kraken { krakenSlams(c, k, time, visibleMaxY) }
     let jump = game.jumping ? sin((1 - game.jumpTime / Game.jumpDuration) * .pi) : 0
     if game.status != .over {
-      if !game.jumping { wake(c, game.x, Game.playerY + 46, flip: false, time) }
+      let boatX = scene.boatX ?? game.x
+      let boatY = Game.playerY + scene.boatOffset
+      if !game.jumping { wake(c, boatX, boatY + 46, flip: false, time) }
       // Shadow shrinks and fades as the boat leaves the water.
       oval(
-        c, game.x + 6 + jump * 10, Game.playerY + 8 + jump * 20, 32 * (1 - jump * 0.25),
+        c, boatX + 6 + jump * 10, boatY + 8 + jump * 20, 32 * (1 - jump * 0.25),
         50 * (1 - jump * 0.25), Ink.outline, alpha: 0.28 - jump * 0.12)
       c.saveGState()
-      c.translateBy(x: game.x, y: Game.playerY - jump * 28)
+      c.translateBy(x: boatX, y: boatY - jump * 28)
       c.rotate(by: reducedMotion ? 0 : game.tilt)
       c.scaleBy(x: 1 + jump * 0.16, y: 1 + jump * 0.16)
       if game.invincible == 0 || Int(game.elapsed * 12) % 2 == 0 { boat(c, 0, 0, pirate: false) }
       c.restoreGState()
     }
+    if game.status == .intro {
+      let p = 1 - game.introTime / Game.introDuration
+      if p > Game.introLandShare + 0.15 {
+        caption("Set sail!", 400, 300, 44, alpha: min(1, (p - Game.introLandShare - 0.15) / 0.1))
+      }
+      caption("Tap to skip", 400, visibleMaxY - 70, 15, alpha: 0.7)
+    }
     c.restoreGState()
+  }
+
+  // MARK: Journey's end
+
+  /// Leviathan palette from the Kraken concept page (concept A).
+  private enum Leviathan {
+    static let skin = "2F5C66", dark = "16323A", light = "5F8F96", belly = "8FB4B0"
+    static let sucker = "C9DED8", spot = "5FF3E6", eye = "FFB000", rage = "FF5A3C", pupil = "1A0D00"
+  }
+
+  /// Where the treasure island and the player's boat sit during the intro, the sail-in and victory.
+  /// How far above the shoreline the ✗ sits on the home land.
+  private static let markDepth = 330.0
+
+  /// Where the home land (intro), the treasure island (sail-in, victory) and the player's boat sit.
+  private func sceneLayout(_ top: Double, _ bottom: Double)
+    -> (landBottom: Double?, islandY: Double?, boatOffset: Double, boatX: Double?)
+  {
+    switch game.status {
+    case .intro:
+      // Land fills the screen down to a strip of ocean; then it slides up and away, fast.
+      let p = 1 - game.introTime / Game.introDuration
+      let q = p < Game.introLandShare ? 0 : pow((p - Game.introLandShare) / (1 - Game.introLandShare), 1.6)
+      let shore = bottom - (bottom - top) * 0.2
+      // The boat waits below the screen and only glides in once the fast-forward starts.
+      let hiddenOffset = bottom + 120 - Game.playerY
+      return (shore - q * (bottom - top + 200), nil, hiddenOffset * (1 - q), nil)
+    case .won:
+      return (nil, 280, -190, 400)
+    default:
+      guard game.outro > 0 else { return (nil, nil, 0, nil) }
+      let t = max(0, min(1, 1 - game.outro / Game.outroDuration)), q = t * t * (3 - 2 * t)
+      return (nil, -260 + q * 540, -q * 190, game.x + (400 - game.x) * q)
+    }
+  }
+
+  /// A palm tree: ink-outlined trunk and fronds.
+  private func palm(_ c: CGContext, _ x: Double, _ y: Double) {
+    line(c, x - 16, y + 62, x, y, Ink.outline, 12)
+    line(c, x - 16, y + 62, x, y, "9A6E48", 7)
+    for i in 0...5 {
+      let a = Double(i) * .pi / 3 + 0.2
+      let ex = x + cos(a) * 44, ey = y + sin(a) * 28
+      line(c, x, y, ex, ey, Ink.outline, 15, alpha: 0.85)
+      line(c, x, y, ex, ey, "2E8A55", 10)
+    }
+  }
+
+  /// The home shore at the start of a voyage: green land with an ✗ marking the treasure map,
+  /// a sandy beach, and the ocean below.
+  private func homeLand(_ c: CGContext, _ left: Double, _ right: Double, _ top: Double, _ shore: Double, _ t: Double) {
+    guard shore > top else { return }
+    let wave = sin(t * 2) * 3
+    for x in stride(from: left, through: right, by: 56) {
+      oval(c, x, shore + 14 + wave, 46, 20, "FFFFFF", alpha: 0.45)
+      oval(c, x, shore + 4, 44, 18, "7FD8CB")
+    }
+    c.setFillColor(UIColor(hex: "F6DCA0").cgColor)
+    c.fill(CGRect(x: left, y: top, width: right - left, height: shore - top))
+    for x in stride(from: left, through: right, by: 52) { oval(c, x, shore - 2, 40, 14, "F6DCA0") }
+    let grass = shore - 46
+    c.setFillColor(UIColor(hex: "5FB36A").cgColor)
+    c.fill(CGRect(x: left, y: top, width: right - left, height: max(0, grass - top)))
+    for x in stride(from: left, through: right, by: 48) { oval(c, x, grass, 36, 16, "5FB36A") }
+    for (dx, dy, rx, ry) in [(120.0, 150.0, 90.0, 50.0), (650, 120, 110, 60), (260, 520, 120, 70), (560, 460, 90, 55), (90, 700, 100, 60), (700, 760, 120, 70)] {
+      oval(c, dx, grass - dy, rx, ry, "4C9A5A")
+    }
+    for (px, py) in [(110.0, 120.0), (700, 150), (180, 430), (640, 560), (330, 720), (90, 860)] { palm(c, px, grass - py) }
+    // ✗ marks the spot.
+    let xY = shore - Self.markDepth
+    oval(c, 400, xY + 6, 60, 26, "8A6A3A", alpha: 0.3)
+    for (dx, dy) in [(1.0, 1.0), (1.0, -1.0)] {
+      line(c, 400 - 36 * dx, xY - 36 * dy, 400 + 36 * dx, xY + 36 * dy, Ink.outline, 20)
+      line(c, 400 - 36 * dx, xY - 36 * dy, 400 + 36 * dx, xY + 36 * dy, "D9483B", 12)
+    }
+  }
+
+  /// A sandy island with a palm and an open, glowing treasure chest.
+  private func treasureIsland(_ c: CGContext, _ x: Double, _ y: Double, _ t: Double) {
+    let swell = sin(t * 1.6) * 3, pulse = (sin(t * 4) + 1) / 2
+    oval(c, x, y, 160 + swell, 118 + swell, "FFFFFF", alpha: 0.35)
+    oval(c, x, y, 150, 108, "7FD8CB")
+    oval(c, x, y, 134, 94, "F6DCA0")
+    ring(c, x, y, 134, 94, Ink.outline, 3, alpha: 0.5)
+    oval(c, x - 70, y + 10, 46, 34, "5FB36A")
+    // Palm
+    line(c, x - 70, y + 12, x - 54, y - 50, Ink.outline, 12)
+    line(c, x - 70, y + 12, x - 54, y - 50, "9A6E48", 7)
+    for i in 0...5 {
+      let a = Double(i) * .pi / 3 + 0.2
+      let ex = x - 54 + cos(a) * 44, ey = y - 50 + sin(a) * 28
+      line(c, x - 54, y - 50, ex, ey, Ink.outline, 15, alpha: 0.85)
+      line(c, x - 54, y - 50, ex, ey, "2E8A55", 10)
+    }
+    // Chest with a golden glow and sparkles
+    let cx = x + 34, cy = y + 4
+    oval(c, cx, cy, 64 + pulse * 8, 50 + pulse * 6, "FFD34D", alpha: 0.22 + pulse * 0.12)
+    polygon(c, [cx - 34, cy - 30, cx + 34, cy - 30, cx + 30, cy - 52, cx - 30, cy - 52], "A86E42", outline: 3)
+    for (dx, dy) in [(-16.0, -12.0), (0, -16), (14, -11), (-6, -6), (8, -4)] { oval(c, cx + dx, cy + dy, 8, 6, "FFD34D") }
+    oval(c, cx + 2, cy - 18, 5, 5, "E0475B")
+    polygon(c, [cx - 34, cy - 8, cx + 34, cy - 8, cx + 34, cy + 26, cx - 34, cy + 26], "8A5A34", outline: 3)
+    line(c, cx - 34, cy + 2, cx + 34, cy + 2, "F3C75F", 4)
+    line(c, cx - 34, cy + 18, cx + 34, cy + 18, "F3C75F", 4)
+    polygon(c, [cx - 6, cy - 4, cx + 6, cy - 4, cx + 6, cy + 10, cx - 6, cy + 10], "F3C75F", outline: 2)
+    for i in 0..<4 {
+      let a = t * 0.9 + Double(i) * .pi / 2, r = 58.0, sx = cx + cos(a) * r, sy = cy - 10 + sin(a) * r * 0.6
+      let s = 4 + pulse * 4
+      line(c, sx - s, sy, sx + s, sy, "FFF6E0", 2.5, alpha: 0.6 + pulse * 0.4)
+      line(c, sx, sy - s, sx, sy + s, "FFF6E0", 2.5, alpha: 0.6 + pulse * 0.4)
+    }
+  }
+
+  /// A tapering arm along `pts`, with a pale underside and suckers.
+  private func tentacle(_ c: CGContext, _ pts: [(Double, Double)], _ w0: Double, alpha: Double) {
+    let n = pts.count - 1
+    guard n > 0 else { return }
+    for i in 0..<n {
+      let s = Double(i) / Double(n)
+      let w = max(1.5, w0 * pow(1 - s, 0.85))
+      let (x1, y1) = pts[i], (x2, y2) = pts[i + 1]
+      line(c, x1, y1, x2, y2, Leviathan.dark, w + 3, alpha: alpha)
+      line(c, x1, y1, x2, y2, Leviathan.skin, w, alpha: alpha)
+      line(c, x1, y1, x2, y2, Leviathan.belly, w * 0.35, alpha: alpha * 0.55)
+      if i % 3 == 1 && w > 6 { oval(c, x1, y1, w * 0.18, w * 0.15, Leviathan.sucker, alpha: alpha) }
+    }
+  }
+  /// Points along an arm that curls harder toward its tip.
+  private func spine(_ x0: Double, _ y0: Double, _ length: Double, _ heading: Double, _ dir: Double, _ curl: Double, _ t: Double) -> [(Double, Double)] {
+    var pts: [(Double, Double)] = [], x = x0, y = y0, h = heading
+    let n = 20
+    for i in 0...n {
+      let s = Double(i) / Double(n)
+      pts.append((x, y))
+      h += dir * (0.02 + curl * pow(s, 2.4)) + 0.03 * sin(t * 1.5 + s * 5)
+      x += cos(h) * length / Double(n)
+      y += sin(h) * length / Double(n)
+    }
+    return pts
+  }
+
+  /// The Leviathan seen from above: warning lanes, submerged arms, mantle off the top of the screen, head and eyes.
+  private func krakenBody(_ c: CGContext, _ k: Kraken, _ t: Double, _ bottom: Double) {
+    let hx = 400.0, hy = k.y, pulse = (sin(t * 9) + 1) / 2
+    c.saveGState()
+    if k.dying > 0 { c.setAlpha(CGFloat(k.dying / 1.6)) }
+    for l in k.warningLanes {
+      let lx = Game.lanes[l]
+      c.setFillColor(UIColor(hex: "14001E").withAlphaComponent(0.14 + 0.12 * pulse).cgColor)
+      c.fill(CGRect(x: lx - 63, y: hy + 60, width: 126, height: max(1, bottom - hy - 60)))
+      for i in 0..<6 {
+        let ph = (t * 0.8 + Double(i) * 0.17).truncatingRemainder(dividingBy: 1)
+        ring(c, lx + sin(Double(i) * 2.3) * 30, bottom - 60 - ph * 360, 5 + Double(i % 3) * 2, 5 + Double(i % 3) * 2, "FFFFFF", 2, alpha: 0.75 * (1 - ph))
+      }
+    }
+    // Submerged arms fan out from the crown; feeding tentacles trail down the outer lanes.
+    for (i, a) in [-1.05, -0.72, -0.38, 0.38, 0.72, 1.05].enumerated() {
+      tentacle(c, spine(hx + a * 24, hy + 40, 150 + Double(i % 2) * 40, .pi / 2 + a * 0.9, a < 0 ? -1 : 1, 0.5, t), 22, alpha: 0.38)
+    }
+    for side in [-1.0, 1.0] {
+      tentacle(c, spine(hx + side * 40, hy + 40, 320, .pi / 2 - side * 0.55, side, 0.06, t), 14, alpha: 0.38)
+    }
+    // Fins near the mantle tip, then the mantle rising off the top of the screen.
+    let flap = sin(t * 1.8) * 6
+    for side in [-1.0, 1.0] {
+      polygon(c, [hx + side * 8, hy - 236, hx + side * (84 + flap), hy - 272, hx + side * 22, hy - 312], Leviathan.light, outline: 2.5)
+    }
+    c.beginPath()
+    c.move(to: CGPoint(x: hx - 66, y: hy - 20))
+    c.addQuadCurve(to: CGPoint(x: hx, y: hy - 340), control: CGPoint(x: hx - 86, y: hy - 210))
+    c.addQuadCurve(to: CGPoint(x: hx + 66, y: hy - 20), control: CGPoint(x: hx + 86, y: hy - 210))
+    c.closePath()
+    c.setFillColor(UIColor(hex: Leviathan.skin).cgColor)
+    c.setStrokeColor(UIColor(hex: Ink.outline).withAlphaComponent(0.6).cgColor)
+    c.setLineWidth(3)
+    c.drawPath(using: .fillStroke)
+    line(c, hx, hy - 30, hx, hy - 300, Leviathan.dark, 8, alpha: 0.5)
+    for side in [-1.0, 1.0] { line(c, hx + side * 26, hy - 30, hx + side * 10, hy - 280, "000000", 3, alpha: 0.14) }
+    for (bx, by) in [(-34.0, -70.0), (30, -96), (-18, -140), (22, -168), (-28, -200), (14, -236)] {
+      oval(c, hx + bx, hy + by, 5, 5, "C9C6B8")
+      oval(c, hx + bx, hy + by, 2, 2, "3D3A33")
+    }
+    // Photophores pulse, and blaze before a slam.
+    let glow = k.warning > 0 ? 1 : 0.35 + 0.65 * (0.5 + 0.5 * sin(t * (k.enraged ? 5 : 2.4)))
+    for side in [-1.0, 1.0] {
+      for i in 1..<9 {
+        let f = Double(i) / 9
+        oval(c, hx + side * 44 * (1 - f * 0.8), hy - 24 - f * 290, 6 * (1 - f * 0.5), 6 * (1 - f * 0.5), Leviathan.spot, alpha: glow * 0.35)
+        oval(c, hx + side * 44 * (1 - f * 0.8), hy - 24 - f * 290, 3 * (1 - f * 0.5), 3 * (1 - f * 0.5), Leviathan.spot, alpha: glow)
+      }
+    }
+    // Head with bulging side eyes.
+    // A hit briefly lightens the head (no white overlay).
+    oval(c, hx, hy + 6, 72, 34, k.hit > 0 ? Leviathan.light : Leviathan.skin)
+    ring(c, hx, hy + 6, 72, 34, Leviathan.dark, 3, alpha: 0.8)
+    for side in [-1.0, 1.0] {
+      let ex = hx + side * 62, ey = hy + 2
+      oval(c, ex, ey, 20, 17, Leviathan.dark)
+      oval(c, ex, ey, 13, 10, k.enraged ? Leviathan.rage : Leviathan.eye)
+      oval(c, ex, ey, 2.2, 7, Leviathan.pupil)
+      oval(c, ex - 4, ey - 3, 2, 2, "FFFFFF", alpha: 0.8)
+    }
+    c.restoreGState()
+  }
+
+  /// Tentacles slamming down their lanes toward the boat.
+  private func krakenSlams(_ c: CGContext, _ k: Kraken, _ t: Double, _ bottom: Double) {
+    guard k.slam > 0 else { return }
+    let progress = 1 - k.slam / Game.slamDuration
+    let reach = 0.25 + 0.75 * pow(min(1, progress / 0.3), 3)
+    for l in k.slamLanes {
+      // Rooted in the arm crown under the head, curving out to the lane, then straight down it.
+      let lx = Game.lanes[l]
+      let rootX = 400 + max(-40, min(40, lx - 400)), rootY = k.y + 34
+      let bendY = k.y + 150
+      let end = bendY + (bottom - bendY) * reach
+      var pts: [(Double, Double)] = []
+      for i in 0...8 {
+        let s = Double(i) / 8, u = 1 - s
+        pts.append((u * u * rootX + 2 * u * s * lx + s * s * lx, u * u * rootY + 2 * u * s * (rootY + 30) + s * s * bendY))
+      }
+      for i in 1...16 {
+        let s = Double(i) / 16
+        pts.append((lx + sin(t * 6 - s * 6) * 8 * s, bendY + s * (end - bendY)))
+      }
+      tentacle(c, pts, 40, alpha: 1)
+      oval(c, lx, end, 44, 16, "FFFFFF", alpha: 0.7)
+    }
+  }
+
+  /// Large caption text centred on `x` with a soft shadow, used by the intro scene.
+  private func caption(_ text: String, _ x: Double, _ y: Double, _ size: Double, alpha: Double = 1) {
+    let shadow = NSShadow()
+    shadow.shadowColor = UIColor(hex: Ink.outline).withAlphaComponent(0.8 * alpha)
+    shadow.shadowOffset = CGSize(width: 0, height: 3)
+    shadow.shadowBlurRadius = 4
+    let attributes: [NSAttributedString.Key: Any] = [
+      .font: UIFont.systemFont(ofSize: size, weight: .black),
+      .foregroundColor: UIColor(hex: "FFF6E0").withAlphaComponent(alpha), .shadow: shadow,
+    ]
+    let width = (text as NSString).size(withAttributes: attributes).width
+    (text as NSString).draw(at: CGPoint(x: x - width / 2, y: y), withAttributes: attributes)
   }
 
   // MARK: Primitives
@@ -386,6 +638,10 @@ final class WaterView: UIView {
     polygon(c, [x - 14.6, y - 1, x + 14.6, y - 1, x, y + 15], "FFF6E0")
   }
   override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+    if game.status == .intro {
+      game.skipIntro()
+      return
+    }
     guard let p = touches.first?.location(in: self) else { return }
     down = p
     anchor = p.x
@@ -417,6 +673,10 @@ final class WaterView: UIView {
     else { return }
     let x = (p.x - offsetX) / worldScale
     let y = (p.y - offsetY) / worldScale
+    if let k = game.kraken, k.surfaced, y < k.y + 150 {
+      game.fire()  // Tapping the Kraken fires straight at it.
+      return
+    }
     if let target = game.entities.filter({
       $0.kind == .pirate && !$0.dead && abs($0.x - x) < 65 && abs($0.y - y) < 75
     })

@@ -225,6 +225,64 @@ class GameTest {
         assertEquals(480.0, kotlin.math.hypot(shot.vx, shot.vy), .001)
         assertEquals(aim, shot.x+shot.vx*(Game.PLAYER_Y-shot.y)/shot.vy, .001)
     }
+    private fun atKraken(): Pair<Game, Kraken> {
+        val g = game(); g.distance = Game.JOURNEY_LENGTH - .01; g.update(.01)
+        val k = g.kraken!!; k.y = Game.KRAKEN_Y; k.attackTimer = 0.0
+        return g to k
+    }
+    @Test fun introShowsTreasureThenSails() {
+        val g = Game({ .5 }); g.beginVoyage(); assertEquals(Status.INTRO, g.status)
+        g.update(1.0); assertEquals(Status.INTRO, g.status); assertEquals(0.0, g.distance, 0.0)
+        repeat(80) { g.update(.05) }; assertEquals(Status.PLAYING, g.status)
+        val skipped = Game({ .5 }); skipped.beginVoyage(); skipped.skipIntro(); assertEquals(Status.PLAYING, skipped.status)
+    }
+    @Test fun journeyEndsWithTheKraken() {
+        val g = game(); g.distance = Game.JOURNEY_LENGTH - .01
+        var rose = false; g.onEvent = { if (it == "kraken") rose = true }
+        g.update(.05)
+        assertTrue(rose); assertTrue(g.bossActive); assertNotNull(g.kraken)
+        assertEquals(Game.JOURNEY_LENGTH, g.distance, 0.0); assertEquals(1.0, g.journeyProgress, 0.0); assertEquals(5, g.level)
+        g.entities.clear()
+        repeat(200) { g.invincible = 100.0; g.update(.05) }
+        assertTrue("no pirates during the fight", g.entities.none { it.kind == Kind.PIRATE })
+        assertEquals("the journey stops at the island", Game.JOURNEY_LENGTH, g.distance, 0.0)
+    }
+    @Test fun krakenSlamsThePlayersLane() {
+        val (g, k) = atKraken(); g.update(.01)
+        assertEquals(listOf(1), k.warningLanes); assertEquals(1.0, k.warning, .001)
+        advance(g, 1.05); assertEquals(100 - Game.SLAM_DAMAGE, g.health)
+        val (dodger, dk) = atKraken(); dodger.update(.01); dodger.move(-1)
+        advance(dodger, 1.5); assertEquals("changing lanes dodges the slam", 100, dodger.health); assertTrue(dk.slamLanes.isEmpty())
+    }
+    @Test fun krakenHurlsRocksAndSweepsAllButOneLane() {
+        val (g, k) = atKraken(); k.attackStep = 1; g.update(.01)
+        val rocks = g.entities.filter { it.kind == Kind.ROCK }
+        assertEquals(2, rocks.size); assertNotEquals(rocks[0].lane, rocks[1].lane)
+        val (s, sk) = atKraken(); sk.attackStep = 2; s.update(.01)
+        assertEquals(3, sk.warningLanes.size)
+        val safe = (0..3).first { it !in sk.warningLanes }
+        s.lane = safe; s.x = Game.LANES[safe]; advance(s, 1.5)
+        assertEquals("the gap is safe", 100, s.health)
+    }
+    @Test fun krakenRagesAtHalfHealth() {
+        val (g, k) = atKraken(); k.hp = Game.KRAKEN_RAGE_HP; g.update(.01)
+        assertEquals(2, k.warningLanes.size); assertTrue(1 in k.warningLanes); assertEquals(.7, k.warning, .001)
+    }
+    @Test fun defeatingTheKrakenClaimsTheTreasure() {
+        val (g, k) = atKraken(); k.attackTimer = 100.0
+        val events = mutableListOf<String>(); g.onEvent = { events.add(it) }
+        val score = g.score
+        k.hp = 1; g.bullets.add(Bullet(400.0, k.y, 0.0, 0.0, false)); g.update(0.0)
+        assertTrue(k.dying > 0); assertEquals(score + Game.TREASURE_BONUS, g.score); assertTrue("krakenDefeated" in events)
+        advance(g, 1.7); assertNull(g.kraken); assertTrue(g.outro > 0); assertTrue("treasure" in events)
+        advance(g, 3.1); assertEquals(Status.WON, g.status); assertTrue("won" in events)
+        assertFalse("no ad continue after winning", g.canRevive)
+    }
+    @Test fun reviveDuringTheFightCancelsTheAttack() {
+        val (g, k) = atKraken(); g.update(.01); assertTrue(k.warning > 0)
+        g.damage(100); assertTrue(g.revive())
+        assertTrue(k.warningLanes.isEmpty()); assertEquals(0.0, k.warning, 0.0); assertNotNull(g.kraken)
+    }
     @Test fun captainPhases() {
         val boss = game(); val captain = boss.spawn(Kind.PIRATE, 0, 150.0, PirateType.CAPTAIN)!!
         captain.cooldown = 0.0; boss.update(.01); assertEquals(.65, captain.warning, .001)

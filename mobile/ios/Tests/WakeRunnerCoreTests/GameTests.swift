@@ -381,6 +381,119 @@ final class GameTests: XCTestCase {
     XCTAssertEqual(shot.damage, 25); XCTAssertEqual(hypot(shot.vx, shot.vy), 480, accuracy: 0.001)
     XCTAssertEqual(shot.x + shot.vx * (Game.playerY - shot.y) / shot.vy, aim, accuracy: 0.001)
   }
+  private func atKraken() -> (Game, Kraken) {
+    let g = game()
+    g.distance = Game.journeyLength - 0.01
+    g.update(0.01)
+    let k = g.kraken!
+    k.y = Game.krakenY
+    k.attackTimer = 0
+    return (g, k)
+  }
+  func testIntroShowsTreasureThenSails() {
+    let g = Game(random: { 0.5 })
+    g.beginVoyage()
+    XCTAssertEqual(g.status, .intro)
+    g.update(1)
+    XCTAssertEqual(g.status, .intro)
+    XCTAssertEqual(g.distance, 0)
+    for _ in 0..<80 { g.update(0.05) }
+    XCTAssertEqual(g.status, .playing)
+    let skipped = Game(random: { 0.5 })
+    skipped.beginVoyage()
+    skipped.skipIntro()
+    XCTAssertEqual(skipped.status, .playing)
+  }
+  func testJourneyEndsWithTheKraken() {
+    let g = game()
+    g.distance = Game.journeyLength - 0.01
+    var rose = false
+    g.onEvent = { if $0 == "kraken" { rose = true } }
+    g.update(0.05)
+    XCTAssertTrue(rose)
+    XCTAssertTrue(g.bossActive)
+    XCTAssertNotNil(g.kraken)
+    XCTAssertEqual(g.distance, Game.journeyLength)
+    XCTAssertEqual(g.journeyProgress, 1)
+    XCTAssertEqual(g.level, 5)
+    g.entities.removeAll()
+    for _ in 0..<200 {
+      g.invincible = 100
+      g.update(0.05)
+    }
+    XCTAssertFalse(g.entities.contains { $0.kind == .pirate }, "no pirates during the fight")
+    XCTAssertEqual(g.distance, Game.journeyLength, "the journey stops at the island")
+  }
+  func testKrakenSlamsThePlayersLane() {
+    let (g, k) = atKraken()
+    g.update(0.01)
+    XCTAssertEqual(k.warningLanes, [1])
+    XCTAssertEqual(k.warning, 1, accuracy: 0.001)
+    advance(g, 1.05)
+    XCTAssertEqual(g.health, 100 - Game.slamDamage)
+    let (dodger, dk) = atKraken()
+    dodger.update(0.01)
+    dodger.move(-1)
+    advance(dodger, 1.5)
+    XCTAssertEqual(dodger.health, 100, "changing lanes dodges the slam")
+    XCTAssertTrue(dk.slamLanes.isEmpty)
+  }
+  func testKrakenHurlsRocksAndSweepsAllButOneLane() {
+    let (g, k) = atKraken()
+    k.attackStep = 1
+    g.update(0.01)
+    let rocks = g.entities.filter { $0.kind == .rock }
+    XCTAssertEqual(rocks.count, 2)
+    XCTAssertNotEqual(rocks[0].lane, rocks[1].lane)
+    let (s, sk) = atKraken()
+    sk.attackStep = 2
+    s.update(0.01)
+    XCTAssertEqual(sk.warningLanes.count, 3)
+    let safe = (0..<4).first { !sk.warningLanes.contains($0) }!
+    s.lane = safe
+    s.x = Game.lanes[safe]
+    advance(s, 1.5)
+    XCTAssertEqual(s.health, 100, "the gap is safe")
+  }
+  func testKrakenRagesAtHalfHealth() {
+    let (g, k) = atKraken()
+    k.hp = Game.krakenRageHP
+    g.update(0.01)
+    XCTAssertEqual(k.warningLanes.count, 2)
+    XCTAssertTrue(k.warningLanes.contains(1))
+    XCTAssertEqual(k.warning, 0.7, accuracy: 0.001)
+  }
+  func testDefeatingTheKrakenClaimsTheTreasure() {
+    let (g, k) = atKraken()
+    k.attackTimer = 100
+    var events: [String] = []
+    g.onEvent = { events.append($0) }
+    let score = g.score
+    k.hp = 1
+    g.bullets.append(Bullet(x: 400, y: k.y, vx: 0, vy: 0, enemy: false))
+    g.update(0)
+    XCTAssertGreaterThan(k.dying, 0)
+    XCTAssertEqual(g.score, score + Game.treasureBonus)
+    XCTAssertTrue(events.contains("krakenDefeated"))
+    advance(g, 1.7)
+    XCTAssertNil(g.kraken)
+    XCTAssertGreaterThan(g.outro, 0)
+    XCTAssertTrue(events.contains("treasure"))
+    advance(g, 3.1)
+    XCTAssertEqual(g.status, .won)
+    XCTAssertTrue(events.contains("won"))
+    XCTAssertFalse(g.canRevive, "no ad continue after winning")
+  }
+  func testReviveDuringTheFightCancelsTheAttack() {
+    let (g, k) = atKraken()
+    g.update(0.01)
+    XCTAssertGreaterThan(k.warning, 0)
+    g.damage(100)
+    XCTAssertTrue(g.revive())
+    XCTAssertTrue(k.warningLanes.isEmpty)
+    XCTAssertEqual(k.warning, 0)
+    XCTAssertNotNil(g.kraken)
+  }
   func testCaptainPhases() {
     let boss = game(); let captain = boss.spawn(.pirate, lane: 0, y: 150, pirateType: .captain)!
     captain.cooldown = 0; boss.update(0.01); XCTAssertEqual(captain.warning, 0.65)
