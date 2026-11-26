@@ -4,6 +4,8 @@ name: Android
 # also build a signed release, uploaded to Google Play when PLAY_PUBLISH_ENABLED is true.
 on:
   pull_request:
+    # ready_for_review starts the checks when a draft PR is marked ready.
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - mobile/android/**
       - .github/workflows/android.yml
@@ -42,6 +44,8 @@ defaults:
 jobs:
   check:
     name: Check Android app
+    # Draft PRs skip the checks (shown as skipped, which does not block merging).
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

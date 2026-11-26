@@ -5,6 +5,8 @@ name: iOS
 # IOS_PUBLISH_ENABLED is true, uploads it to App Store Connect for TestFlight.
 on:
   pull_request:
+    # ready_for_review starts the checks when a draft PR is marked ready.
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - mobile/ios/**
       - .github/workflows/ios.yml
@@ -36,6 +38,8 @@ env:
 jobs:
   check:
     name: Check iOS app
+    # Draft PRs skip the checks (shown as skipped, which does not block merging).
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
