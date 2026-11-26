@@ -4,7 +4,7 @@ let package = Package(
     name: "WakeRunnerCore",
     products: [.library(name: "WakeRunnerCore", targets: ["WakeRunnerCore"])],
     targets: [
-        .target(name: "WakeRunnerCore", path: "WakeRunner", exclude: ["WakeRunnerApp.swift", "GameSurface.swift", "Info.plist", "Assets.xcassets"], sources: ["Game.swift"]),
+        .target(name: "WakeRunnerCore", path: "WakeRunner", exclude: ["WakeRunnerApp.swift", "GameSurface.swift", "Info.plist", "Assets.xcassets", "PrivacyInfo.xcprivacy"], sources: ["Game.swift"]),
         .testTarget(name: "WakeRunnerCoreTests", dependencies: ["WakeRunnerCore"], path: "Tests/WakeRunnerCoreTests")
     ]
 )

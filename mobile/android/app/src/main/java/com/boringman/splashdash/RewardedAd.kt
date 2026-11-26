@@ -22,11 +22,17 @@ import android.widget.*
  * ad network here (and PlaceholderAdView in WakeRunnerApp.swift on iOS).
  */
 interface RewardedAds {
+    /** False when no ad can be shown; the continue button is hidden. */
+    val isAvailable: Boolean
     fun show(activity: Activity, onReward: () -> Unit, onClose: () -> Unit)
 }
 
-/** Stand-in ad: a full-screen countdown, matching the iOS PlaceholderAdView. */
-class PlaceholderRewardedAds(private val seconds: Int = 5) : RewardedAds {
+/**
+ * Stand-in ad: a full-screen countdown, matching the iOS PlaceholderAdView. Store review treats
+ * placeholder content as unfinished, so it is only [isAvailable] in debuggable builds; release
+ * builds hide "Watch ad to continue" until a real ad network replaces this.
+ */
+class PlaceholderRewardedAds(override val isAvailable: Boolean, private val seconds: Int = 5) : RewardedAds {
     override fun show(activity: Activity, onReward: () -> Unit, onClose: () -> Unit) {
         val density = activity.resources.displayMetrics.density
         fun dp(v: Int) = (v * density).toInt()

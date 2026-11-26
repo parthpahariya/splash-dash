@@ -46,6 +46,8 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
         const val JUMP_RECHARGE = 2.0
         /** Hull after watching an ad to continue a finished voyage. */
         const val REVIVE_HEALTH = 20
+        /** Ad continues allowed per voyage. */
+        const val MAX_REVIVES = 5
         /** Seconds of invincibility after a revive, so the boat is not hit straight away. */
         const val REVIVE_GRACE = 2.0
         /** Hazards closer than this above the boat are cleared on revive. */
@@ -85,8 +87,10 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
     var lastSunkReward = 250
     var piratesSunk = 0
     var heartsCollected = 0
-    /** Times this voyage was continued after an ad. Unlimited. */
+    /** Times this voyage was continued after an ad, up to [MAX_REVIVES]. */
     var revives = 0
+    val canRevive get() = status == Status.OVER && revives < MAX_REVIVES
+    val revivesLeft get() = max(0, MAX_REVIVES - revives)
     val entities = mutableListOf<Entity>()
     val bullets = mutableListOf<Bullet>()
     private var spawnTimer = 1.3
@@ -113,8 +117,9 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
         onEvent("start")
     }
 
+    /** Changes lane; the boat cannot steer while it is in the air. */
     fun move(direction: Int) {
-        if (status == Status.PLAYING) lane = (lane + direction.sign).coerceIn(0, 3)
+        if (status == Status.PLAYING && !jumping) lane = (lane + direction.sign).coerceIn(0, 3)
     }
     fun jump(): Boolean {
         if (status != Status.PLAYING || !jumpReady) return false
@@ -138,7 +143,7 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
      * Nearby hazards and enemy shots are cleared and the boat gets a short grace period.
      */
     fun revive(): Boolean {
-        if (status != Status.OVER) return false
+        if (!canRevive) return false
         status = Status.PLAYING
         health = REVIVE_HEALTH; invincible = REVIVE_GRACE
         jumpTime = 0.0; jumpCooldown = 0.0; fireCooldown = 0.0; firing = false

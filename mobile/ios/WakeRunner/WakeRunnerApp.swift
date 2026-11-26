@@ -505,7 +505,7 @@ struct GameScreen: View {
           title
           if status == .over { results }
           bestChip
-          if status == .over { continueButton }
+          if canContinue { continueButton }
           Button(action: model.startOrResume) {
             Label(
               status == .paused
@@ -517,7 +517,7 @@ struct GameScreen: View {
             .frame(maxWidth: .infinity, minHeight: 60)
           }
           // After a game over the ad continue is the main action; a fresh voyage is secondary.
-          .buttonStyle(ClayButtonStyle(kind: status == .over ? .secondary : .primary, radius: 22))
+          .buttonStyle(ClayButtonStyle(kind: canContinue ? .secondary : .primary, radius: 22))
           Group {
             if typeSize.isAccessibilitySize {
               VStack(spacing: 12) { soundOption; helpOption }
@@ -593,7 +593,10 @@ struct GameScreen: View {
     .accessibilityElement(children: .combine)
   }
 
-  /// "Watch ad to continue": plays a rewarded ad, then revives this voyage. Unlimited.
+  /// The ad continue is offered only while an ad can actually be shown.
+  private var canContinue: Bool { PlaceholderAdView.isAvailable && model.game.canRevive }
+
+  /// "Watch ad to continue": plays a rewarded ad, then revives this voyage (up to 5 times).
   private var continueButton: some View {
     Button {
       watchingAd = true
@@ -601,7 +604,7 @@ struct GameScreen: View {
       VStack(spacing: 3) {
         Label("Watch ad to continue", systemImage: "play.rectangle.fill")
           .font(.title3.weight(.black))
-        Text("Back in with \(Game.reviveHealth)% hull")
+        Text("Back in with \(Game.reviveHealth)% hull · \(model.game.revivesLeft) left")
           .font(.caption.weight(.heavy)).opacity(0.75)
       }
       .frame(maxWidth: .infinity, minHeight: 64)
@@ -609,7 +612,7 @@ struct GameScreen: View {
     }
     .buttonStyle(ClayButtonStyle(kind: .primary, radius: 22))
     .accessibilityLabel("Watch ad to continue")
-    .accessibilityHint("Continues this voyage with \(Game.reviveHealth) percent hull.")
+    .accessibilityHint("Continues this voyage with \(Game.reviveHealth) percent hull. \(model.game.revivesLeft) continues left.")
   }
 
   private var bestChip: some View {
@@ -681,7 +684,7 @@ struct GameScreen: View {
       ("scope", Theme.gold, "Fire",
        "Hold Fire to shoot ahead. Tap a pirate or mine to aim across lanes. Each hit removes one health pip; tougher ships earn more points."),
       ("arrow.up.circle.fill", Theme.gold, "Jump",
-       "Swipe up any time to jump over rocks for 1.15 seconds. Ships, cannonballs and mines still hit you in the air. Jumps never run out: after landing, you can jump again two seconds later."),
+       "Swipe up any time to jump over rocks for 1.15 seconds. You can't change lanes in the air, and ships, cannonballs and mines still hit you. Jumps never run out: after landing, you can jump again two seconds later."),
       ("heart.fill", Theme.heart, "Hull",
        "Hearts repair 10 hull. Rocks cost 25 hull; cannonballs cost 15, or 25 for heavy and sniper shots. Mines cost 25, ships 30, and charging Rammers 40."),
       ("flag.fill", Theme.gold, "Pirate fleet",
@@ -731,6 +734,13 @@ struct GameScreen: View {
 /// Stand-in rewarded ad: a full-screen countdown. `onReward` runs only when it was watched to
 /// the end; closing early calls `onClose` alone. Matches PlaceholderRewardedAds on Android.
 struct PlaceholderAdView: View {
+  /// App Review rejects placeholder content (Guideline 2.1), so the stand-in only runs in debug
+  /// builds. Release builds hide "Watch ad to continue" until a real ad network replaces this.
+  #if DEBUG
+    static let isAvailable = true
+  #else
+    static let isAvailable = false
+  #endif
   var seconds = 5
   let onReward: () -> Void
   let onClose: () -> Void

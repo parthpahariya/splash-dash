@@ -1,0 +1,9 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Scaled into the 66dp safe zone so circular and squircle masks never clip the artwork. -->
+    <group android:scaleX="0.8" android:scaleY="0.8" android:pivotX="54" android:pivotY="54">
+        <path android:fillColor="#5ACBC2" android:pathData="M18,78Q36,66 54,78Q72,90 90,78L90,90Q72,102 54,90Q36,78 18,90Z" />
+        <path android:fillColor="#F2C982" android:pathData="M54,14Q26,42 36,73L72,73Q82,42 54,14Z" />
+        <path android:fillColor="#F8EED6" android:pathData="M54,26L40,52L68,52Z" />
+        <path android:fillColor="#E27659" android:pathData="M44,57h20v12h-20z" />
+    </group>
+</vector>

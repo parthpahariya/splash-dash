@@ -6,6 +6,12 @@ import kotlin.math.abs
 
 class GameTest {
     private fun game() = Game({ .5 }).apply { reset() }
+    @Test fun noSteeringMidAir() {
+        val g = game(); assertTrue(g.jump())
+        g.move(1); g.move(-1); assertEquals("lane is locked while jumping", 1, g.lane)
+        repeat(24) { g.update(.05) } // land after 1.15 s
+        assertFalse(g.jumping); g.move(1); assertEquals("steering works again after landing", 2, g.lane)
+    }
     @Test fun steeringIsBoundedAndSmooth() {
         val g = game(); repeat(10) { g.move(-1) }; assertEquals(0, g.lane)
         val x = g.x; g.update(.02); assertTrue(g.x < x && g.x > Game.LANES[0])
@@ -41,9 +47,12 @@ class GameTest {
         assertFalse(near in g.entities); assertTrue(far in g.entities); assertTrue(heart in g.entities)
         assertTrue(g.bullets.none { it.enemy }); assertEquals(1, g.bullets.size)
         assertFalse("grace period after reviving", g.damage(25))
-        // Unlimited: every game over can be continued.
-        g.invincible = 0.0; g.damage(100); assertTrue(g.revive()); assertEquals(2, g.revives)
-        g.reset(); assertEquals(0, g.revives)
+        // Up to five continues per voyage.
+        repeat(Game.MAX_REVIVES - 1) { g.invincible = 0.0; g.damage(100); assertTrue(g.canRevive); assertTrue(g.revive()) }
+        assertEquals(Game.MAX_REVIVES, g.revives); assertEquals(0, g.revivesLeft)
+        g.invincible = 0.0; g.damage(100)
+        assertFalse(g.canRevive); assertFalse("no sixth continue", g.revive()); assertEquals(Status.OVER, g.status)
+        g.reset(); assertEquals(0, g.revives); assertEquals(Game.MAX_REVIVES, g.revivesLeft)
     }
     @Test fun jumpRechargePausesWithGame() {
         val g = game(); assertTrue(g.jump()); g.pause(); g.update(5.0); assertFalse(g.jumpReady)

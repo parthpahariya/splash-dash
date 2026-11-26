@@ -2,7 +2,10 @@ package com.boringman.splashdash
 
 import android.app.Activity
 import android.app.Dialog
+import android.content.pm.ApplicationInfo
 import android.content.res.Configuration
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.drawable.ColorDrawable
@@ -25,7 +28,11 @@ import kotlin.math.min
 class MainActivity : Activity(), Choreographer.FrameCallback {
     private val game = Game()
     /** Swap for a real ad network; see RewardedAd.kt. */
-    private val ads: RewardedAds = PlaceholderRewardedAds()
+    private val ads: RewardedAds by lazy {
+        PlaceholderRewardedAds(isAvailable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0)
+    }
+    /** Back pauses a running voyage instead of leaving the app (Android 13+ uses this callback). */
+    private var backCallback: OnBackInvokedCallback? = null
     private val prefs by lazy { getSharedPreferences("wake-runner", MODE_PRIVATE) }
     private var best = 0
     private var sound = false
@@ -340,12 +347,13 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             addView(icon("trophy", Clay.gold, 16))
             addView(text(15f, Clay.creamMuted, 800).apply { text = "Personal best  ${Clay.digits(best)}"; fontFeatureSettings = "tnum" })
         })
-        if (status == Status.OVER) add(continueButton(), LinearLayout.LayoutParams(-1, -2))
+        val canContinue = ads.isAvailable && game.canRevive
+        if (canContinue) add(continueButton(), LinearLayout.LayoutParams(-1, -2))
         add(clayButton(
             when (status) { Status.PAUSED -> "Back to the water"; Status.OVER -> "One more voyage"; else -> "Set sail" },
             when (status) { Status.PAUSED -> "play"; Status.OVER -> "restart"; else -> "sailboat" },
             // After a game over the ad continue is the main action; a fresh voyage is secondary.
-            primary = status != Status.OVER, radius = 22, size = 20f, minHeight = 60,
+            primary = !canContinue, radius = 22, size = 20f, minHeight = 60,
         ) { if (game.status == Status.PAUSED) game.pause() else game.reset(); updateHUD() }, LinearLayout.LayoutParams(-1, -2))
         val options = if (accessibleText) column(12) else row(12)
         val soundButton = clayButton(if (sound) "Sound on" else "Sound off", if (sound) "speaker.on" else "speaker.off", radius = 16) {
@@ -359,7 +367,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         if (status == Status.READY) add(tips(), LinearLayout.LayoutParams(-1, -2))
     }
 
-    /** "Watch ad to continue": plays a rewarded ad, then revives this voyage. Unlimited. */
+    /** "Watch ad to continue": plays a rewarded ad, then revives this voyage (up to 5 times). */
     private fun continueButton() = column(3).apply {
         gravity = Gravity.CENTER
         addView(row(8).apply {
@@ -367,13 +375,13 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             addView(icon("ad", Clay.ink, 23))
             addView(text(20f, Clay.ink, 900).apply { text = "Watch ad to continue" })
         }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL })
-        addView(text(12f, Clay.alpha(Clay.ink, .75f), 800).apply { text = "Back in with ${Game.REVIVE_HEALTH}% hull" },
+        addView(text(12f, Clay.alpha(Clay.ink, .75f), 800).apply { text = "Back in with ${Game.REVIVE_HEALTH}% hull · ${game.revivesLeft} left" },
             LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL })
         background = clay(Clay.goldTop, Clay.gold, 22)
         minimumHeight = dp(64) + depth
         setPadding(dp(14), dp(10), dp(14), dp(10) + depth)
         isClickable = true; isFocusable = true; asButton(this)
-        contentDescription = "Watch ad to continue. Continues this voyage with ${Game.REVIVE_HEALTH} percent hull."
+        contentDescription = "Watch ad to continue. Continues this voyage with ${Game.REVIVE_HEALTH} percent hull. ${game.revivesLeft} continues left."
         setOnClickListener {
             isEnabled = false
             ads.show(this@MainActivity, onReward = { game.revive(); updateHUD() }, onClose = { isEnabled = true })
@@ -437,6 +445,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
                 game.firing = false; fireFace.held = false
                 noticeUntil = 0; toast.animate().cancel(); toast.visibility = View.GONE
             }
+            updateBackHandling(playing)
             reveal(hud, playing, first, 1f)
             reveal(menu, !playing, first, .96f)
             if (game.status == Status.OVER || game.status == Status.PAUSED) menu.announceForAccessibility(
@@ -492,7 +501,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         val rules = listOf(
             listOf("swipe", Clay.mint, "Steer", "Swipe left or right across the water to change lanes. Screen-reader actions on the waterway also let you steer and jump."),
             listOf("scope", Clay.gold, "Fire", "Hold Fire to shoot ahead. Tap a pirate or mine to aim across lanes. Each hit removes one health pip; tougher ships earn more points."),
-            listOf("arrow.up", Clay.gold, "Jump", "Swipe up any time to jump over rocks for 1.15 seconds. Ships, cannonballs and mines still hit you in the air. Jumps never run out: after landing, you can jump again two seconds later."),
+            listOf("arrow.up", Clay.gold, "Jump", "Swipe up any time to jump over rocks for 1.15 seconds. You can't change lanes in the air, and ships, cannonballs and mines still hit you. Jumps never run out: after landing, you can jump again two seconds later."),
             listOf("heart", Clay.heart, "Hull", "Hearts repair 10 hull. Rocks cost 25 hull; cannonballs cost 15, or 25 for heavy and sniper shots. Mines cost 25, ships 30, and charging Rammers 40."),
             listOf("flag", Clay.gold, "Pirate fleet", "Scout 1 hull · Gunner 2 · Burst Raider 3 · Scattershot 3 · Sharpshooter 2 · Rammer 4 · Minelayer 3 · Ironclad 6 · Captain 10. New types arrive as levels increase."),
             listOf("warning", Clay.danger, "Read the attack", "Dodge aimed shots and three-shot bursts, find gaps in spreads, and use long reloads to attack. A Sharpshooter marks its aim before firing; move after the lock. Rammers warn before charging. Shoot mines to clear a path. Captains alternate bursts and spreads and attack faster at half health."),
@@ -544,6 +553,27 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         dialog.setContentView(scroller)
         dialog.window?.setBackgroundDrawable(ColorDrawable(Clay.deep))
         dialog.show()
+    }
+
+    // Back: pause a running voyage first; from a menu, Back leaves as usual. (Android only: iOS has
+    // no system Back, and its pause button covers the same need.)
+
+    private fun updateBackHandling(playing: Boolean) {
+        if (Build.VERSION.SDK_INT < 33) return
+        val current = backCallback
+        if (playing && current == null) {
+            val callback = OnBackInvokedCallback { if (game.status == Status.PLAYING) { game.pause(); updateHUD() } }
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback)
+            backCallback = callback
+        } else if (!playing && current != null) {
+            onBackInvokedDispatcher.unregisterOnBackInvokedCallback(current)
+            backCallback = null
+        }
+    }
+    @Deprecated("Used before Android 13; newer versions use updateBackHandling.")
+    override fun onBackPressed() {
+        if (game.status == Status.PLAYING) { game.pause(); updateHUD() }
+        else @Suppress("DEPRECATION") super.onBackPressed()
     }
 
     // Lifecycle

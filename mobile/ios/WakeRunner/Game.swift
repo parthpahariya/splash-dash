@@ -79,6 +79,8 @@ final class Game {
   static let jumpRecharge = 2.0
   /// Hull after watching an ad to continue a finished voyage.
   static let reviveHealth = 20
+  /// Ad continues allowed per voyage.
+  static let maxRevives = 5
   /// Seconds of invincibility after a revive, so the boat is not hit straight away.
   static let reviveGrace = 2.0
   /// Hazards closer than this above the boat are cleared on revive.
@@ -110,8 +112,10 @@ final class Game {
   var lastSunkReward = 250
   var piratesSunk = 0
   var heartsCollected = 0
-  /// Times this voyage was continued after an ad. Unlimited.
+  /// Times this voyage was continued after an ad, up to `maxRevives`.
   var revives = 0
+  var canRevive: Bool { status == .over && revives < Self.maxRevives }
+  var revivesLeft: Int { max(0, Self.maxRevives - revives) }
   var entities: [Entity] = []
   var bullets: [Bullet] = []
   private var spawnTimer = 1.3
@@ -158,8 +162,9 @@ final class Game {
     lastCaptainDistance = -900
     onEvent("start")
   }
+  /// Changes lane; the boat cannot steer while it is in the air.
   func move(_ direction: Int) {
-    if status == .playing {
+    if status == .playing && !jumping {
       lane = max(0, min(3, lane + (direction == 0 ? 0 : direction > 0 ? 1 : -1)))
     }
   }
@@ -192,7 +197,7 @@ final class Game {
   /// Continues a finished voyage (after a rewarded ad) with score, distance and level kept.
   /// Nearby hazards and enemy shots are cleared and the boat gets a short grace period.
   @discardableResult func revive() -> Bool {
-    guard status == .over else { return false }
+    guard canRevive else { return false }
     status = .playing
     health = Self.reviveHealth
     invincible = Self.reviveGrace

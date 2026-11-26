@@ -8,6 +8,17 @@ final class GameTests: XCTestCase {
     g.reset()
     return g
   }
+  func testNoSteeringMidAir() {
+    let g = game()
+    XCTAssertTrue(g.jump())
+    g.move(1)
+    g.move(-1)
+    XCTAssertEqual(g.lane, 1, "lane is locked while jumping")
+    for _ in 0..<24 { g.update(0.05) }  // land after 1.15 s
+    XCTAssertFalse(g.jumping)
+    g.move(1)
+    XCTAssertEqual(g.lane, 2, "steering works again after landing")
+  }
   func testSteeringIsBoundedAndSmooth() {
     let g = game()
     for _ in 0..<10 { g.move(-1) }
@@ -143,13 +154,23 @@ final class GameTests: XCTestCase {
     XCTAssertFalse(g.bullets.contains { $0.enemy })
     XCTAssertEqual(g.bullets.count, 1)
     XCTAssertFalse(g.damage(25), "grace period after reviving")
-    // Unlimited: every game over can be continued.
+    // Up to five continues per voyage.
+    for _ in 1..<Game.maxRevives {
+      g.invincible = 0
+      g.damage(100)
+      XCTAssertTrue(g.canRevive)
+      XCTAssertTrue(g.revive())
+    }
+    XCTAssertEqual(g.revives, Game.maxRevives)
+    XCTAssertEqual(g.revivesLeft, 0)
     g.invincible = 0
     g.damage(100)
-    XCTAssertTrue(g.revive())
-    XCTAssertEqual(g.revives, 2)
+    XCTAssertFalse(g.canRevive)
+    XCTAssertFalse(g.revive(), "no sixth continue")
+    XCTAssertEqual(g.status, .over)
     g.reset()
     XCTAssertEqual(g.revives, 0)
+    XCTAssertEqual(g.revivesLeft, Game.maxRevives)
   }
   func testJumpRechargePausesWithGame() {
     let g = game()
