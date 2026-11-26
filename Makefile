@@ -4,7 +4,7 @@ IOS_DIR = mobile/ios
 IOS_BUNDLE_ID ?= com.boringman.thelastsail
 IOS_DERIVED_DATA ?= $(IOS_DIR)/build/DerivedData
 IOS_CONFIG ?= $(IOS_DIR)/Config/Local.xcconfig
-IOS_APP = $(IOS_DERIVED_DATA)/Build/Products/Debug-iphoneos/WakeRunner.app
+IOS_APP = $(IOS_DERIVED_DATA)/Build/Products/Debug-iphoneos/TheLastSail.app
 # Use the first available paired physical iPhone. Override with IOS_DEVICE=<UDID>.
 ifeq ($(origin IOS_DEVICE), undefined)
 IOS_DEVICE := $(shell xcrun devicectl list devices 2>/dev/null | awk '/physical/ && /(^|[[:space:]])available([[:space:]]|$$)/ { for (i = 1; i <= NF; i++) if ($$i ~ /^[0-9A-F]+-[0-9A-F]+$$/ && length($$i) == 25) { print $$i; exit } }')
@@ -22,7 +22,7 @@ ios-devices:
 ios-device:
 	@test -n "$(IOS_DEVICE)" || { echo 'No paired iPhone found. Connect and unlock it, or pass IOS_DEVICE=<UDID>.' >&2; exit 1; }
 	@test -f "$(IOS_CONFIG)" || { echo 'Copy $(IOS_DIR)/Config/Local.xcconfig.example to $(IOS_CONFIG) and set DEVELOPMENT_TEAM.' >&2; exit 1; }
-	xcodebuild -project "$(IOS_DIR)/WakeRunner.xcodeproj" -scheme WakeRunner -configuration Debug \
+	xcodebuild -project "$(IOS_DIR)/TheLastSail.xcodeproj" -scheme TheLastSail -configuration Debug \
 		-destination 'id=$(IOS_DEVICE)' -derivedDataPath "$(IOS_DERIVED_DATA)" \
 		-xcconfig "$(IOS_CONFIG)" -allowProvisioningUpdates -quiet \
 		PRODUCT_BUNDLE_IDENTIFIER="$(IOS_BUNDLE_ID)" build

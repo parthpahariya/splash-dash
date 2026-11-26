@@ -2,7 +2,7 @@ import AppKit
 import ImageIO
 
 // The app icon for both platforms: a ship's silhouette sailing past a setting sun, with a pirate
-// pennant at the masthead. Colours come from the game theme (Clay.kt / Theme in WakeRunnerApp.swift).
+// pennant at the masthead. Colours come from the game theme (Clay.kt / Theme in TheLastSailApp.swift).
 //
 // Rebuild from the repository root with: swift mobile/tools/generate-ios-icon.swift
 // It writes the iOS 1024 px PNG and the Android adaptive-icon vectors from the same shapes, so the
@@ -146,7 +146,7 @@ func cgPath(_ d: String) -> CGPath {
 
 // The icons show the central 72 units (18…90), as a circular Android mask does.
 let iconView = CGRect(x: 18, y: 18, width: 72, height: 72)
-render(1024, 1024, view: iconView, to: "mobile/ios/WakeRunner/Assets.xcassets/AppIcon.appiconset/AppIcon.png")
+render(1024, 1024, view: iconView, to: "mobile/ios/TheLastSail/Assets.xcassets/AppIcon.appiconset/AppIcon.png")
 
 // Google Play store listing: the 512 px hi-res icon and the 1024 × 500 feature graphic.
 let listing = "mobile/android/listing"

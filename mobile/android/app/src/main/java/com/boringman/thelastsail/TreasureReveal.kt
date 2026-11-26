@@ -9,7 +9,7 @@ import android.view.animation.DecelerateInterpolator
 /**
  * The treasure's contents, shown when the voyage is won: the chest opens, a ship in a bottle
  * rises out, and a sealed letter slides in. Plays once; with reduced motion it appears open.
- * Matches TreasureChestArt in WakeRunnerApp.swift, drawn on the same 300 × 170 grid.
+ * Matches TreasureChestArt in TheLastSailApp.swift, drawn on the same 300 × 170 grid.
  */
 class TreasureRevealView(
     context: Context, reducedMotion: Boolean, private val mode: Mode = Mode.OPENING, private val onProgress: (Float) -> Unit = {},

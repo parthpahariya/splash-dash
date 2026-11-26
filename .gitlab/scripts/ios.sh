@@ -3,7 +3,7 @@
 # GitLab CI/CD script, called by .gitlab/ios.yml. Requires macOS with Xcode.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
-project=mobile/ios/WakeRunner.xcodeproj
+project=mobile/ios/TheLastSail.xcodeproj
 # Supplies DEVELOPMENT_TEAM (and a developer's optional Local.xcconfig overrides).
 xcconfig=mobile/ios/Config/Base.xcconfig
 out="$PWD/dist/ios"
@@ -62,7 +62,7 @@ release() {
     umask 077
     work=$(mktemp -d)
     trap cleanup_release EXIT
-    xcodebuild -project "$project" -scheme WakeRunner -configuration Release \
+    xcodebuild -project "$project" -scheme TheLastSail -configuration Release \
         -xcconfig "$xcconfig" -destination 'generic/platform=iOS' -showBuildSettings \
         > "$work/build-settings.txt"
     local team bundle_id
@@ -146,18 +146,18 @@ PY
     done
 
     xcodebuild -version
-    xcodebuild archive -project "$project" -scheme WakeRunner -configuration Release \
-        -xcconfig "$xcconfig" -destination 'generic/platform=iOS' -archivePath "$work/WakeRunner.xcarchive" \
+    xcodebuild archive -project "$project" -scheme TheLastSail -configuration Release \
+        -xcconfig "$xcconfig" -destination 'generic/platform=iOS' -archivePath "$work/TheLastSail.xcarchive" \
         CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="$team" CODE_SIGN_IDENTITY='Apple Distribution' \
         PROVISIONING_PROFILE_SPECIFIER="$profile_name" OTHER_CODE_SIGN_FLAGS="--keychain $keychain" \
         MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION="$build_number"
 
     # Keep a signed .ipa as a CI artifact, then upload when publishing is on.
-    xcodebuild -exportArchive -archivePath "$work/WakeRunner.xcarchive" \
+    xcodebuild -exportArchive -archivePath "$work/TheLastSail.xcarchive" \
         -exportOptionsPlist "$work/export.plist" -exportPath "$work/export"
     mkdir -p "$out"
     local ipa="$out/the-last-sail-$version-$build_number.ipa"
-    cp "$work/export/WakeRunner.ipa" "$ipa"
+    cp "$work/export/TheLastSail.ipa" "$ipa"
 
     if [[ "${IOS_PUBLISH_ENABLED:-}" != true ]]; then
         echo "IOS_PUBLISH_ENABLED is not true; skipping the App Store Connect upload."
@@ -178,7 +178,7 @@ case "${1:-}" in
         # Gameplay engine tests run on macOS through Swift Package Manager; no simulator needed.
         swift test --package-path mobile/ios
         # Compile the full app for the simulator SDK without booting a simulator or signing.
-        xcodebuild build -project "$project" -scheme WakeRunner -configuration Debug \
+        xcodebuild build -project "$project" -scheme TheLastSail -configuration Debug \
             -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO
         ;;
     release) release ;;

@@ -57,7 +57,7 @@ final class WaterView: UIView {
   }
   @objc private func jumpFromAccessibility() -> Bool { game.jump() }
   required init?(coder: NSCoder) { fatalError("Use init(game:)") }
-  // Palette for the toy-boat theme (matches Theme in WakeRunnerApp.swift).
+  // Palette for the toy-boat theme (matches Theme in TheLastSailApp.swift).
   private enum Ink {
     static let outline = "0B2530"
     static let seaTop = "2BB0BC"

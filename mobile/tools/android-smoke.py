@@ -20,8 +20,8 @@ def run(*args):
     return subprocess.check_output([adb, *args], text=True, stderr=subprocess.STDOUT)
 
 def tree():
-    run('shell', 'uiautomator', 'dump', '/sdcard/wake-runner-ui.xml')
-    return ET.fromstring(run('shell', 'cat', '/sdcard/wake-runner-ui.xml'))
+    run('shell', 'uiautomator', 'dump', '/sdcard/the-last-sail-ui.xml')
+    return ET.fromstring(run('shell', 'cat', '/sdcard/the-last-sail-ui.xml'))
 
 def find(label):
     for node in tree().iter('node'):

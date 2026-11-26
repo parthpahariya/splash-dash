@@ -12,10 +12,10 @@ Every change to one app must be made to the other in the same change, including:
   jumps and pirate behaviour identical.
 - **Game artwork:** `GameView.kt` ↔ `GameSurface.swift`. Keep the same shapes, colours, layering
   and animation, in the same 800-unit world coordinates.
-- **Screens and controls:** `MainActivity.kt` ↔ `WakeRunnerApp.swift`. This covers the HUD
+- **Screens and controls:** `MainActivity.kt` ↔ `TheLastSailApp.swift`. This covers the HUD
   (pause, hull card, score card, toasts, Fire button), the start, pause and game-over menus, and
   the handbook. Keep the same layout, wording, icons and states.
-- **Theme:** `Clay.kt` ↔ `Theme`, `Clay` and `ClayButtonStyle` in `WakeRunnerApp.swift`. Keep the
+- **Theme:** `Clay.kt` ↔ `Theme`, `Clay` and `ClayButtonStyle` in `TheLastSailApp.swift`. Keep the
   same colour tokens, border, shadow depth and corner radii.
 - **Icons:** `ControlIcon.kt` draws stand-ins for the SF Symbols that iOS uses. If an iOS
   symbol is added or changed, add or update the matching Android icon.
