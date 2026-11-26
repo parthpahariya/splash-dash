@@ -156,7 +156,7 @@ PY
     xcodebuild -exportArchive -archivePath "$work/WakeRunner.xcarchive" \
         -exportOptionsPlist "$work/export.plist" -exportPath "$work/export"
     mkdir -p "$out"
-    local ipa="$out/splash-dash-$version-$build_number.ipa"
+    local ipa="$out/the-last-sail-$version-$build_number.ipa"
     cp "$work/export/WakeRunner.ipa" "$ipa"
 
     if [[ "${IOS_PUBLISH_ENABLED:-}" != true ]]; then

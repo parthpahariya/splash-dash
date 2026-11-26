@@ -2,7 +2,7 @@
 
 ## Android and iOS must stay identical
 
-Wake Runner ships as two native apps: Android (`mobile/android`, Kotlin, Views and Canvas) and
+The Last Sail ships as two native apps: Android (`mobile/android`, Kotlin, Views and Canvas) and
 iOS (`mobile/ios`, Swift, SwiftUI and Core Graphics). They must always have **the same final UI
 and the same features**. A player switching phones should not notice a difference.
 

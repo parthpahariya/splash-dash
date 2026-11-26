@@ -1,4 +1,4 @@
-package com.boringman.splashdash
+package com.boringman.thelastsail
 
 import org.junit.Assert.*
 import org.junit.Test

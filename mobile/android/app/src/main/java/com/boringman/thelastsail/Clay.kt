@@ -1,4 +1,4 @@
-package com.boringman.splashdash
+package com.boringman.thelastsail
 
 import android.animation.ValueAnimator
 import android.content.Context

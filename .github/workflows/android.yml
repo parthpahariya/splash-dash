@@ -125,7 +125,7 @@ jobs:
           ANDROID_VERSION_CODE: ${{ steps.version.outputs.code }}
         run: |
           ./gradlew :app:bundleRelease :app:assembleRelease
-          name="splash-dash-$ANDROID_VERSION_NAME-$ANDROID_VERSION_CODE"
+          name="the-last-sail-$ANDROID_VERSION_NAME-$ANDROID_VERSION_CODE"
           mkdir -p "$GITHUB_WORKSPACE/dist/android"
           cp app/build/outputs/bundle/release/app-release.aab "$GITHUB_WORKSPACE/dist/android/$name.aab"
           cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/dist/android/$name.apk"
@@ -141,7 +141,7 @@ jobs:
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: com.boringman.splashdash
+          packageName: com.boringman.thelastsail
           releaseFiles: dist/android/*.aab
           releaseName: ${{ steps.version.outputs.name }} (${{ steps.version.outputs.code }})
           track: ${{ inputs.track || vars.PLAY_TRACK || 'internal' }}

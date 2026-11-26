@@ -23,10 +23,10 @@ The individual App Store Connect API key is used only for uploads and needs no i
 
 1. Confirm `DEVELOPMENT_TEAM` in [mobile/ios/Config/Base.xcconfig](../mobile/ios/Config/Base.xcconfig)
    matches your signing files. The committed team is `4VJ3Z5FXLP`. Team IDs are not secret.
-2. In App Store Connect, create the app with bundle ID `com.boringman.splashdash`.
+2. In App Store Connect, create the app with bundle ID `com.boringman.thelastsail`.
 3. Export the Apple Distribution certificate **with its private key** as a password-protected
    `.p12` from Keychain Access. Download an App Store distribution provisioning profile for
-   `com.boringman.splashdash`, using the same certificate and team. Renew the profile and
+   `com.boringman.thelastsail`, using the same certificate and team. Renew the profile and
    replace the secret before it expires.
 4. In App Store Connect, click your username → **Edit Profile → Individual API Key** and
    generate/download the `.p8` (offered only once). The user needs permission to upload builds,

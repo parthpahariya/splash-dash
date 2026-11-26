@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 
 IOS_DIR = mobile/ios
-IOS_BUNDLE_ID ?= com.boringman.splashdash
+IOS_BUNDLE_ID ?= com.boringman.thelastsail
 IOS_DERIVED_DATA ?= $(IOS_DIR)/build/DerivedData
 IOS_CONFIG ?= $(IOS_DIR)/Config/Local.xcconfig
 IOS_APP = $(IOS_DERIVED_DATA)/Build/Products/Debug-iphoneos/WakeRunner.app
@@ -13,7 +13,7 @@ endif
 .PHONY: help ios-devices ios-device
 
 help:
-	@printf '%s\n' 'make ios-devices  List paired devices and their identifiers.' 'make ios-device   Build, install, and launch Wake Runner on a physical iPhone.'
+	@printf '%s\n' 'make ios-devices  List paired devices and their identifiers.' 'make ios-device   Build, install, and launch The Last Sail on a physical iPhone.'
 
 ios-devices:
 	xcrun devicectl list devices

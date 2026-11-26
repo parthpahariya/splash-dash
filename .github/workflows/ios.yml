@@ -153,7 +153,7 @@ jobs:
           xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/WakeRunner.xcarchive" \
             -exportOptionsPlist "$options" -exportPath "$RUNNER_TEMP/export"
           mkdir -p dist/ios
-          cp "$RUNNER_TEMP/export/WakeRunner.ipa" "dist/ios/splash-dash-$VERSION-$BUILD.ipa"
+          cp "$RUNNER_TEMP/export/WakeRunner.ipa" "dist/ios/the-last-sail-$VERSION-$BUILD.ipa"
 
       - uses: actions/upload-artifact@v4
         with:

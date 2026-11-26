@@ -1,4 +1,4 @@
-package com.boringman.splashdash
+package com.boringman.thelastsail
 
 import android.app.Activity
 import android.app.Dialog
@@ -441,7 +441,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             setPadding(dp(12), dp(6), dp(12), dp(6))
         })
         add(text(if (accessibleText) 34f else 42f, weight = 900).apply {
-            text = when (status) { Status.PAUSED -> "PAUSED"; Status.OVER -> "WHAT A\nVOYAGE!"; Status.WON -> "VOYAGE\nCOMPLETE!"; else -> "WAKE\nRUNNER" }
+            text = when (status) { Status.PAUSED -> "PAUSED"; Status.OVER -> "WHAT A\nVOYAGE!"; Status.WON -> "VOYAGE\nCOMPLETE!"; else -> "THE LAST\nSAIL" }
             gravity = Gravity.CENTER
             setLineSpacing(0f, .92f)
             setShadowLayer(.01f, 0f, dpf(4f), Clay.ink)

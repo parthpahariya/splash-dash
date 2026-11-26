@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 python=${CI_PYTHON:-python3}
 project=mobile/android
-package=com.boringman.splashdash
+package=com.boringman.thelastsail
 out="$PWD/dist/android"
 
 die() { echo "android: $*" >&2; exit 1; }
@@ -50,7 +50,7 @@ release() {
     # One Gradle run tests and packages, sharing one daemon and dependency resolution.
     (cd "$project" && ./gradlew --no-daemon :app:testDebugUnitTest :app:bundleRelease :app:assembleRelease)
     mkdir -p "$out"
-    local name="splash-dash-$version-$ANDROID_VERSION_CODE"
+    local name="the-last-sail-$version-$ANDROID_VERSION_CODE"
     cp "$project/app/build/outputs/bundle/release/app-release.aab" "$out/$name.aab"
     cp "$project/app/build/outputs/apk/release/app-release.apk" "$out/$name.apk"
     echo "Built $version ($ANDROID_VERSION_CODE) into $out"

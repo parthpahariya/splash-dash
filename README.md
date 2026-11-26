@@ -1,4 +1,4 @@
-# Wake Runner
+# The Last Sail
 
 A top-down, four-lane boat arcade game for **Android** (Kotlin) and **iPhone and iPad** (Swift).
 Steer between lanes, jump over rocks, and sink pirate ships with your cannon.

@@ -659,7 +659,7 @@ struct GameScreen: View {
 
   private var title: some View {
     let text =
-      status == .ready ? "WAKE\nRUNNER" : status == .paused ? "PAUSED" : status == .won ? "VOYAGE\nCOMPLETE!" : "WHAT A\nVOYAGE!"
+      status == .ready ? "THE LAST\nSAIL" : status == .paused ? "PAUSED" : status == .won ? "VOYAGE\nCOMPLETE!" : "WHAT A\nVOYAGE!"
     return ZStack {
       Text(text).foregroundStyle(Theme.ink).offset(y: 4).accessibilityHidden(true)
       Text(text).foregroundStyle(Theme.cream)

@@ -1,4 +1,4 @@
-package com.boringman.splashdash
+package com.boringman.thelastsail
 
 import android.graphics.*
 import android.graphics.drawable.Drawable

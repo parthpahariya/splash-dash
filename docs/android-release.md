@@ -21,7 +21,7 @@ rerunning an older run rebuilds its original commit and will still use the old m
 
 ## One-time setup
 
-1. Create the app `com.boringman.splashdash` in Play Console. The Play API cannot create apps,
+1. Create the app `com.boringman.thelastsail` in Play Console. The Play API cannot create apps,
    so upload the first `.aab` by hand. A release build from this pipeline works.
 2. Create an upload key and enrol in Play App Signing:
    `keytool -genkeypair -v -keystore upload.jks -alias upload -keyalg RSA -keysize 4096 -validity 10000`.

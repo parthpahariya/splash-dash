@@ -6,10 +6,10 @@ fun requiredEnv(name: String): String =
     providers.environmentVariable(name).orNull ?: error("$name is required when ANDROID_KEYSTORE_PATH is set")
 
 android {
-    namespace = "com.boringman.splashdash"
+    namespace = "com.boringman.thelastsail"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.boringman.splashdash"
+        applicationId = "com.boringman.thelastsail"
         // Google Play automatic protection requires API 24 or newer.
         minSdk = 24
         targetSdk = 36

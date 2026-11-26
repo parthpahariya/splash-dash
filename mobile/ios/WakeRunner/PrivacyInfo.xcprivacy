@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Wake Runner collects no data and does not track. UserDefaults holds only this app's own
+<!-- The Last Sail collects no data and does not track. UserDefaults holds only this app's own
      best score and sound setting (reason CA92.1). Update this file when adding an ad SDK. -->
 <plist version="1.0">
 <dict>
