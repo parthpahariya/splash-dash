@@ -1,0 +1,184 @@
+name: iOS
+
+# Pull requests and release-branch pushes that touch the iOS app run the checks.
+# An `ios-vX.Y.Z` tag (or a manual run) archives a signed build and, when
+# IOS_PUBLISH_ENABLED is true, uploads it to App Store Connect for TestFlight.
+on:
+  pull_request:
+    # ready_for_review starts the checks when a draft PR is marked ready.
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - mobile/ios/**
+      - .github/workflows/ios.yml
+  push:
+    branches: [codex/splash-dash-2026-11-25]
+    tags: ['ios-v*']
+    paths:
+      - mobile/ios/**
+      - .github/workflows/ios.yml
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version name (X.Y.Z)
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PROJECT: mobile/ios/WakeRunner.xcodeproj
+  SCHEME: WakeRunner
+  # Supplies DEVELOPMENT_TEAM for release signing.
+  XCCONFIG: mobile/ios/Config/Base.xcconfig
+
+jobs:
+  check:
+    name: Check iOS app
+    # Draft PRs skip the checks (shown as skipped, which does not block merging).
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select the newest Xcode
+        run: |
+          xcode=$(ls -d /Applications/Xcode_*.app | grep -Eiv 'beta|release_candidate' | sort -V | tail -1)
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+      - name: Gameplay tests
+        run: swift test --package-path mobile/ios
+      - name: Build app for the simulator SDK
+        run: |
+          xcodebuild build -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO
+
+  release:
+    name: Release to TestFlight
+    needs: check
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 60
+    environment: app-store
+    concurrency:
+      group: app-store
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select the newest Xcode
+        run: |
+          xcode=$(ls -d /Applications/Xcode_*.app | grep -Eiv 'beta|release_candidate' | sort -V | tail -1)
+          sudo xcode-select -s "$xcode"
+
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          version=$INPUT_VERSION
+          [[ -z "$version" && "$REF_TYPE" == tag ]] && version=${REF_NAME#ios-v}
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Version must be X.Y.Z (got '$version')"; exit 1; }
+          # Minutes since 2026-01-01 UTC: always increases without stored state.
+          echo "name=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$(( ($(date +%s) - 1767225600) / 60 ))" >> "$GITHUB_OUTPUT"
+
+      # Follows GitHub's guide "Installing an Apple certificate on macOS runners for Xcode development".
+      - name: Install signing certificate and provisioning profile
+        id: signing
+        env:
+          IOS_DIST_P12_BASE64: ${{ secrets.IOS_DIST_P12_BASE64 }}
+          IOS_DIST_P12_PASSWORD: ${{ secrets.IOS_DIST_P12_PASSWORD }}
+          IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+        run: |
+          [[ -n "$IOS_DIST_P12_BASE64" && -n "$IOS_PROFILE_BASE64" ]] \
+            || { echo "::error::Set the iOS signing secrets in the app-store environment"; exit 1; }
+          cert=$RUNNER_TEMP/distribution.p12
+          profile=$RUNNER_TEMP/app.mobileprovision
+          keychain=$RUNNER_TEMP/signing.keychain-db
+          keychain_password=$(openssl rand -hex 24)
+          echo -n "$IOS_DIST_P12_BASE64" | base64 --decode -o "$cert"
+          echo -n "$IOS_PROFILE_BASE64" | base64 --decode -o "$profile"
+
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$cert" -P "$IOS_DIST_P12_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychain -d user -s "$keychain"
+          rm -f "$cert"
+
+          security cms -D -i "$profile" > "$RUNNER_TEMP/profile.plist"
+          uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/profile.plist")
+          for dir in "$HOME/Library/MobileDevice/Provisioning Profiles" \
+                     "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            mkdir -p "$dir" && cp "$profile" "$dir/$uuid.mobileprovision"
+          done
+          echo "keychain=$keychain" >> "$GITHUB_OUTPUT"
+          echo "profile=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/profile.plist")" >> "$GITHUB_OUTPUT"
+
+      - name: Archive and export signed IPA
+        env:
+          VERSION: ${{ steps.version.outputs.name }}
+          BUILD: ${{ steps.version.outputs.build }}
+          KEYCHAIN: ${{ steps.signing.outputs.keychain }}
+          PROFILE_NAME: ${{ steps.signing.outputs.profile }}
+        run: |
+          settings=$(xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
+            -xcconfig "$XCCONFIG" -destination 'generic/platform=iOS' -showBuildSettings)
+          team=$(awk '$1 == "DEVELOPMENT_TEAM" { print $3; exit }' <<<"$settings")
+          bundle_id=$(awk '$1 == "PRODUCT_BUNDLE_IDENTIFIER" { print $3; exit }' <<<"$settings")
+          [[ -n "$team" ]] || { echo "::error::Set DEVELOPMENT_TEAM in $XCCONFIG"; exit 1; }
+
+          xcodebuild archive -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
+            -xcconfig "$XCCONFIG" -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/WakeRunner.xcarchive" \
+            CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="$team" CODE_SIGN_IDENTITY='Apple Distribution' \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN" \
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD"
+
+          options=$RUNNER_TEMP/ExportOptions.plist
+          cp mobile/ios/Config/ExportOptions.plist "$options"
+          /usr/libexec/PlistBuddy -c "Add :teamID string $team" \
+            -c "Add :provisioningProfiles dict" \
+            -c "Add :provisioningProfiles:$bundle_id string $PROFILE_NAME" "$options"
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/WakeRunner.xcarchive" \
+            -exportOptionsPlist "$options" -exportPath "$RUNNER_TEMP/export"
+          mkdir -p dist/ios
+          cp "$RUNNER_TEMP/export/WakeRunner.ipa" "dist/ios/the-last-sail-$VERSION-$BUILD.ipa"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-release
+          path: dist/ios/
+          retention-days: 30
+
+      - name: Upload to App Store Connect
+        if: vars.IOS_PUBLISH_ENABLED == 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_KEY_BASE64: ${{ secrets.ASC_KEY_BASE64 }}
+        run: |
+          [[ "$ASC_KEY_ID" =~ ^[A-Za-z0-9]+$ ]] || { echo "::error::Set the ASC_KEY_ID secret"; exit 1; }
+          keys=$RUNNER_TEMP/private_keys
+          mkdir -p "$keys"
+          echo -n "$ASC_KEY_BASE64" | base64 --decode -o "$keys/AuthKey_$ASC_KEY_ID.p8"
+          # Individual keys use subject=user; altool still needs an issuer value, so pass the key ID.
+          API_PRIVATE_KEYS_DIR="$keys" xcrun altool --upload-app -t ios -f dist/ios/*.ipa \
+            --api-key "$ASC_KEY_ID" --api-issuer "$ASC_KEY_ID" --api-key-subject user
+
+      - name: Clean up keychain and secrets
+        if: always()
+        env:
+          KEYCHAIN: ${{ steps.signing.outputs.keychain }}
+        run: |
+          [[ -z "$KEYCHAIN" ]] || security delete-keychain "$KEYCHAIN" || true
+          rm -rf "$RUNNER_TEMP/private_keys" "$RUNNER_TEMP/app.mobileprovision" "$RUNNER_TEMP/profile.plist"

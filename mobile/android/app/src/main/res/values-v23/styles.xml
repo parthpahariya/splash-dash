@@ -1,0 +1,10 @@
+<resources>
+    <!-- windowLightStatusBar exists from Android 6.0 (API 23); older versions use the base theme. -->
+    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#F2C982</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowBackground">#102C34</item>
+    </style>
+</resources>

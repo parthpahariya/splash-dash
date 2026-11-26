@@ -1,0 +1,18 @@
+# Local CI build output (mobile .apk/.aab/.ipa)
+dist/
+.DS_Store
+
+# Native mobile build output and machine-specific settings
+**/.gradle/
+**/.kotlin/
+**/__pycache__/
+**/build/
+**/device-build/
+**/.build/
+**/.swiftpm/
+**/local.properties
+**/xcuserdata/
+*.xcuserstate
+*.keystore
+*.jks
+mobile/ios/Config/Local.xcconfig

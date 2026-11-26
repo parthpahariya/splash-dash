@@ -1,0 +1,152 @@
+name: Android
+
+# Pull requests that touch the Android app run the checks. Pushes to the release branch
+# also build a signed release, uploaded to Google Play when PLAY_PUBLISH_ENABLED is true.
+on:
+  pull_request:
+    # ready_for_review starts the checks when a draft PR is marked ready.
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - mobile/android/**
+      - .github/workflows/android.yml
+  push:
+    branches: [codex/splash-dash-2026-11-25]
+    paths:
+      - mobile/android/**
+      - .github/workflows/android.yml
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version name (X.Y.Z); leave empty to use versionName in build.gradle.kts
+        required: false
+      track:
+        description: Google Play track
+        type: choice
+        default: internal
+        options: [internal, alpha, beta, production]
+      status:
+        description: Use draft until the app's first release is published in Play Console
+        type: choice
+        default: draft
+        options: [draft, completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    working-directory: mobile/android
+
+jobs:
+  check:
+    name: Check Android app
+    # Draft PRs skip the checks (shown as skipped, which does not block merging).
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+      - uses: android-actions/setup-android@v4
+      - name: Unit tests, lint and debug build
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-debug-apk
+          path: mobile/android/app/build/outputs/apk/debug/*.apk
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: android-reports
+          path: mobile/android/app/build/reports/
+          retention-days: 7
+
+  release:
+    name: Release to Google Play
+    needs: check
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/codex/splash-dash-2026-11-25'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: play
+    concurrency:
+      group: play
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+      - uses: android-actions/setup-android@v4
+
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          version=${INPUT_VERSION:-$(sed -n 's/.*?: "\([0-9][0-9.]*\)".*/\1/p' app/build.gradle.kts | head -1)}
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Version must be X.Y.Z (got '$version')"; exit 1; }
+          # Minutes since 2026-01-01 UTC: always increases without stored state.
+          echo "name=$version" >> "$GITHUB_OUTPUT"
+          echo "code=$(( ($(date +%s) - 1767225600) / 60 ))" >> "$GITHUB_OUTPUT"
+
+      - name: Decode upload keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          [[ -n "$ANDROID_KEYSTORE_BASE64" ]] || { echo "::error::Set the ANDROID_KEYSTORE_BASE64 secret in the play environment"; exit 1; }
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload.jks"
+
+      - name: Build signed bundle and APK
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/upload.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_VERSION_NAME: ${{ steps.version.outputs.name }}
+          ANDROID_VERSION_CODE: ${{ steps.version.outputs.code }}
+        run: |
+          ./gradlew :app:bundleRelease :app:assembleRelease
+          name="the-last-sail-$ANDROID_VERSION_NAME-$ANDROID_VERSION_CODE"
+          mkdir -p "$GITHUB_WORKSPACE/dist/android"
+          cp app/build/outputs/bundle/release/app-release.aab "$GITHUB_WORKSPACE/dist/android/$name.aab"
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/dist/android/$name.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-release
+          path: dist/android/
+          retention-days: 30
+
+      - name: Upload to Google Play
+        if: vars.PLAY_PUBLISH_ENABLED == 'true'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.boringman.thelastsail
+          releaseFiles: dist/android/*.aab
+          releaseName: ${{ steps.version.outputs.name }} (${{ steps.version.outputs.code }})
+          track: ${{ inputs.track || vars.PLAY_TRACK || 'internal' }}
+          status: ${{ inputs.status || vars.PLAY_RELEASE_STATUS || 'draft' }}
+
+      - name: Remove keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload.jks"

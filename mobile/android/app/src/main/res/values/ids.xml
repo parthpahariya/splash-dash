@@ -1,0 +1,5 @@
+<resources>
+    <item name="action_steer_left" type="id" />
+    <item name="action_steer_right" type="id" />
+    <item name="action_jump" type="id" />
+</resources>

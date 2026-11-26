@@ -1,0 +1,3 @@
+// Copy to Local.xcconfig and use your Apple Developer team ID from Xcode.
+// The Makefile passes this file to xcodebuild; your local copy is Git-ignored.
+DEVELOPMENT_TEAM = YOUR_TEAM_ID

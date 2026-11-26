@@ -1,0 +1,600 @@
+import Foundation
+
+// Pure Swift simulation. Coordinates and gameplay rules match Game.kt on Android.
+/// `intro` shows the treasure before a voyage; `won` means the treasure was claimed.
+enum GameStatus { case ready, intro, playing, paused, over, won }
+enum EntityKind { case rock, pirate, heart }
+/// Every type can appear from the start of a voyage; there is no unlock order.
+enum PirateType: CaseIterable {
+  case scout, gunner, burst, scatter, sniper, captain
+  var stats: (name: String, hp: Int, color: String, reward: Int) {
+    switch self {
+    case .scout: return ("Scout", 1, "E9CF80", 125)
+    case .gunner: return ("Gunner", 2, "B85C52", 250)
+    case .burst: return ("Burst Raider", 3, "B990D4", 350)
+    case .scatter: return ("Scattershot", 3, "E69A53", 350)
+    case .sniper: return ("Sharpshooter", 2, "DF6472", 300)
+    case .captain: return ("Pirate Captain", 10, "F3C75F", 1500)
+    }
+  }
+}
+final class Entity {
+  let id: Int
+  let kind: EntityKind
+  let lane: Int
+  var x: Double { Game.lanes[lane] }
+  var y: Double
+  var cooldown: Double
+  let pirateType: PirateType
+  var maxHp: Int { pirateType.stats.hp }
+  var hp: Int
+  var warning = 0.0
+  var burstLeft = 0
+  var burstTimer = 0.0
+  var attackStep = 0
+  var aimX = 337.0
+  var dead = false
+  var hit = 0.0
+  var flash = 0.0
+  init(id: Int, kind: EntityKind, lane: Int, y: Double, cooldown: Double, pirateType: PirateType = .gunner) {
+    self.pirateType = pirateType
+    self.hp = pirateType.stats.hp
+    self.id = id
+    self.kind = kind
+    self.lane = lane
+    self.y = y
+    self.cooldown = cooldown
+  }
+}
+final class Bullet {
+  var x: Double
+  var y: Double
+  let vx: Double
+  let vy: Double
+  let enemy: Bool
+  let damage: Int
+  var radius: Double { damage > 15 ? 11 : 8 }
+  var dead = false
+  init(x: Double, y: Double, vx: Double, vy: Double, enemy: Bool, damage: Int = 15) {
+    self.damage = damage
+    self.x = x
+    self.y = y
+    self.vx = vx
+    self.vy = vy
+    self.enemy = enemy
+  }
+}
+/// The Leviathan that guards the treasure; it rises when the score reaches `Game.maxScore`.
+final class Kraken {
+  var y: Double
+  var hp = Game.krakenHP
+  var hit = 0.0
+  /// Seconds until the next attack once the previous one has finished.
+  var attackTimer = 1.2
+  var attackStep = 0
+  /// Lanes about to be slammed, and the seconds of warning left.
+  var warningLanes: [Int] = []
+  var warning = 0.0
+  /// Lanes a tentacle is slamming right now, and the seconds it stays down.
+  var slamLanes: [Int] = []
+  var slam = 0.0
+  /// Seconds left while it sinks after being defeated.
+  var dying = 0.0
+  var enraged: Bool { hp <= Game.krakenRageHP }
+  var surfaced: Bool { y >= Game.krakenY }
+  init(y: Double) { self.y = y }
+}
+final class Game {
+  static let lanes = [211.0, 337.0, 463.0, 589.0]
+  static let playerY = 665.0
+  static let jumpDuration = 1.15
+  static let pirateGap = 220.0
+  /// The Kraken rises at this score, and the score never goes higher.
+  static let maxScore = 999_999
+  /// The water stops getting faster at this level (every 300 m adds a level).
+  static let maxLevel = 5
+  static let krakenHP = 500
+  /// At or below this health the Kraken rages: two-lane slams and shorter warnings.
+  static let krakenRageHP = 250
+  /// World y of the Kraken's head once it has surfaced at the top of the lanes.
+  static let krakenY = 90.0
+  static let slamDamage = 30
+  static let slamDuration = 0.4
+  /// Seconds of the opening treasure scene before each voyage.
+  static let introDuration = 3.5
+  /// Share of the intro spent on the home shore before the fast-forward out to sea.
+  static let introLandShare = 0.5
+  /// Seconds of sailing to the treasure after the Kraken sinks.
+  static let outroDuration = 3.0
+  /// Jumps are unlimited; after landing the boat needs this long before it can jump again.
+  static let jumpRecharge = 2.0
+  /// Hull after watching an ad to continue a finished voyage.
+  static let reviveHealth = 20
+  /// Ad continues allowed per voyage.
+  static let maxRevives = 5
+  /// Seconds of invincibility after a revive, so the boat is not hit straight away.
+  static let reviveGrace = 2.0
+  /// Hazards closer than this above the boat are cleared on revive.
+  static let reviveClearance = 360.0
+  let random: () -> Double
+  var onEvent: (String) -> Void = { _ in }
+  var status = GameStatus.ready
+  var health = 100
+  var lane = 1
+  var x = lanes[1]
+  var tilt = 0.0
+  /// World-space y of the screen's top and bottom edges, set by the renderer. Objects enter
+  /// just above the top edge and leave just below the bottom edge, so nothing pops in or out
+  /// mid-screen. Defaults match the 800-unit playfield for tests and headless use.
+  var visibleTop = 0.0
+  var visibleBottom = 800.0
+  var spawnY: Double { visibleTop - 80 }
+  var jumpTime = 0.0
+  var jumpCooldown = 0.0
+  var invincible = 0.0
+  var fireCooldown = 0.0
+  var firing = false
+  var distance = 0.0
+  var bonus = 0
+  var elapsed = 0.0
+  var scroll = 0.0
+  var level = 1
+  var lastSunkName = "Gunner"
+  var lastSunkReward = 250
+  var piratesSunk = 0
+  var heartsCollected = 0
+  /// Times this voyage was continued after an ad, up to `maxRevives`.
+  var revives = 0
+  /// The Kraken fight has begun (the score reached `maxScore`); normal rocks and pirates stop.
+  var bossActive = false
+  var kraken: Kraken?
+  /// Seconds left in the opening scene (`intro`) and the sail to the treasure.
+  var introTime = 0.0
+  var outro = 0.0
+  var canRevive: Bool { status == .over && revives < Self.maxRevives }
+  var revivesLeft: Int { max(0, Self.maxRevives - revives) }
+  var entities: [Entity] = []
+  var bullets: [Bullet] = []
+  private var spawnTimer = 1.3
+  private var pickupTimer = 4.8
+  private var pirateTimer = 5.0
+  private var nextID = 0
+  private var lastCaptainDistance = -900.0
+  /// Capped at `maxScore`, so it stops increasing once the Kraken rises.
+  var score: Int { min(Self.maxScore, Int(floor(distance * 2)) + bonus) }
+  var speed: Double { 125 + Double(min(145, (level - 1) * 17)) }
+  var jumping: Bool { jumpTime > 0 }
+  var jumpReady: Bool { !jumping && jumpCooldown <= 0 }
+  /// 0 right after takeoff, 1 when the next jump is available.
+  var jumpCharge: Double {
+    1 - min(1, jumpCooldown / (Self.jumpDuration + Self.jumpRecharge))
+  }
+  init(random: @escaping () -> Double = { Double.random(in: 0..<1) }) { self.random = random }
+  func reset() {
+    status = .playing
+    health = 100
+    lane = 1
+    x = Self.lanes[1]
+    tilt = 0
+    jumpTime = 0
+    jumpCooldown = 0
+    invincible = 0
+    fireCooldown = 0
+    firing = false
+    distance = 0
+    bonus = 0
+    elapsed = 0
+    scroll = 0
+    level = 1
+    lastSunkName = "Gunner"
+    lastSunkReward = 250
+    piratesSunk = 0
+    heartsCollected = 0
+    revives = 0
+    bossActive = false
+    kraken = nil
+    introTime = 0
+    outro = 0
+    entities = []
+    bullets = []
+    spawnTimer = 1.3
+    pickupTimer = 4.8
+    pirateTimer = 5
+    nextID = 0
+    lastCaptainDistance = -900
+    onEvent("start")
+  }
+  /// Changes lane; the boat cannot steer while it is in the air.
+  func move(_ direction: Int) {
+    if status == .playing && !jumping {
+      lane = max(0, min(3, lane + (direction == 0 ? 0 : direction > 0 ? 1 : -1)))
+    }
+  }
+  @discardableResult func jump() -> Bool {
+    guard status == .playing, jumpReady else { return false }
+    jumpTime = Self.jumpDuration
+    jumpCooldown = Self.jumpDuration + Self.jumpRecharge
+    onEvent("jump")
+    return true
+  }
+  @discardableResult func fire(target: Entity? = nil) -> Bool {
+    guard status == .playing, fireCooldown <= 0 else { return false }
+    if let target = target {
+      guard target.kind == .pirate, !target.dead, entities.contains(where: { $0 === target }) else {
+        return false
+      }
+    }
+    return fireAt(targetX: target?.x ?? x, targetY: target?.y ?? (Self.playerY - 100))
+  }
+  @discardableResult func fireAt(targetX: Double, targetY: Double) -> Bool {
+    guard status == .playing, fireCooldown <= 0 else { return false }
+    let y = Self.playerY - 49
+    let dx = targetX - x, dy = targetY - y
+    let d = max(1, hypot(dx, dy))
+    bullets.append(Bullet(x: x, y: y, vx: dx / d * 650, vy: dy / d * 650, enemy: false))
+    fireCooldown = 0.25
+    onEvent("fire")
+    return true
+  }
+  /// Continues a finished voyage (after a rewarded ad) with score, distance and level kept.
+  /// Nearby hazards and enemy shots are cleared and the boat gets a short grace period.
+  @discardableResult func revive() -> Bool {
+    guard canRevive else { return false }
+    status = .playing
+    health = Self.reviveHealth
+    invincible = Self.reviveGrace
+    jumpTime = 0
+    jumpCooldown = 0
+    fireCooldown = 0
+    firing = false
+    entities.removeAll { $0.kind != .heart && $0.y > Self.playerY - Self.reviveClearance }
+    bullets.removeAll { $0.enemy }
+    if let k = kraken {
+      k.warningLanes = []
+      k.warning = 0
+      k.slamLanes = []
+      k.slam = 0
+      k.attackTimer = 2
+    }
+    revives += 1
+    onEvent("revive")
+    return true
+  }
+  /// Starts a new voyage with the opening treasure scene.
+  func beginVoyage() {
+    reset()
+    status = .intro
+    introTime = Self.introDuration
+  }
+  /// Ends the opening scene early (a tap) and starts sailing.
+  func skipIntro() {
+    guard status == .intro else { return }
+    introTime = 0
+    status = .playing
+  }
+  private func startBoss() {
+    bossActive = true
+    kraken = Kraken(y: -260)
+    onEvent("kraken")
+  }
+  /// The Kraken rises, then cycles slam, hurled rocks and sweep; it rages at half health.
+  private func updateKraken(_ k: Kraken, _ dt: Double) {
+    k.hit = max(0, k.hit - dt)
+    if k.dying > 0 {
+      k.dying = max(0, k.dying - dt)
+      if k.dying == 0 {
+        kraken = nil
+        // The sea clears as the boat sails up to the treasure island.
+        entities.removeAll()
+        bullets.removeAll()
+        outro = Self.outroDuration
+        onEvent("treasure")
+      }
+      return
+    }
+    if !k.surfaced {
+      k.y = min(Self.krakenY, k.y + 140 * dt)
+      return
+    }
+    if k.slam > 0 {
+      k.slam = max(0, k.slam - dt)
+      if k.slamLanes.contains(where: { abs(Self.lanes[$0] - x) < 43 }) { damage(Self.slamDamage) }
+      if k.slam == 0 { k.slamLanes = [] }
+      return
+    }
+    if k.warning > 0 {
+      k.warning = max(0, k.warning - dt)
+      if k.warning == 0 {
+        k.slamLanes = k.warningLanes
+        k.warningLanes = []
+        k.slam = Self.slamDuration
+        onEvent("slam")
+      }
+      return
+    }
+    k.attackTimer -= dt
+    if k.attackTimer > 0 { return }
+    let others = (0..<4).filter { $0 != lane }
+    switch k.attackStep % 3 {
+    case 0:  // Slam the player's lane (and a second lane when enraged).
+      k.warningLanes = [lane] + (k.enraged ? [others[min(2, Int(random() * 3))]] : [])
+    case 1:  // Hurl two rocks into clear lanes; jump them.
+      let y = k.y + 140
+      var open = (0..<4).filter { l in !entities.contains { !$0.dead && $0.lane == l && abs($0.y - y) < 120 } }
+      for _ in 0..<min(2, open.count) {
+        let l = open.remove(at: min(open.count - 1, Int(random() * Double(open.count))))
+        entities.append(Entity(id: nextID, kind: .rock, lane: l, y: y, cooldown: 1))
+        nextID += 1
+      }
+      onEvent("hurl")
+    default:  // Sweep every lane but one.
+      let safe = Int(random() * 4) % 4
+      k.warningLanes = (0..<4).filter { $0 != safe }
+    }
+    if !k.warningLanes.isEmpty { k.warning = k.enraged ? 0.7 : 1.0 }
+    k.attackStep += 1
+    k.attackTimer = k.enraged ? 1.4 : 2.0
+  }
+  func pause() {
+    if status == .playing {
+      status = .paused
+      firing = false
+    } else if status == .paused {
+      status = .playing
+    }
+  }
+  @discardableResult func damage(_ amount: Int) -> Bool {
+    // Jumping only clears rocks (see update); ships and cannonballs still hit mid-air.
+    guard status == .playing, invincible <= 0 else { return false }
+    health = max(0, health - amount)
+    invincible = 1.15
+    onEvent("damage")
+    if health == 0 {
+      status = .over
+      firing = false
+      onEvent("over")
+    }
+    return true
+  }
+  /// A lane never holds more than this many rocks back to back.
+  static let maxRocksInARow = 2
+  /// Rocks closer than this (world units) belong to the same run. Hearts and ships between them
+  /// do not break a run, because they can be collected or sunk, leaving the rocks adjacent.
+  static let rockRunGap = 360.0
+  /// Rocks in the run a new rock would join at the top of `lane`.
+  func rockStreak(in lane: Int) -> Int {
+    var edge = spawnY
+    var count = 0
+    for rock in entities.filter({ !$0.dead && $0.lane == lane && $0.kind == .rock })
+      .sorted(by: { $0.y < $1.y })
+    {
+      guard rock.y - edge < Self.rockRunGap else { break }
+      count += 1
+      edge = rock.y
+    }
+    return count
+  }
+  @discardableResult func spawn(
+    _ kind: EntityKind, lane requestedLane: Int? = nil, y requestedY: Double? = nil, pirateType: PirateType = .gunner
+  ) -> Entity? {
+    var lane = max(0, min(3, requestedLane ?? Int(random() * 4)))
+    var y = requestedY ?? spawnY
+    if kind == .rock || kind == .heart {
+      guard
+        let available = (0..<4).map({ (lane + $0) % 4 }).first(where: { candidate in
+          !entities.contains { !$0.dead && $0.lane == candidate && $0.kind == .pirate }
+            && (kind != .rock || rockStreak(in: candidate) < Self.maxRocksInARow)
+        })
+      else { return nil }
+      lane = available
+    }
+    if (kind == .rock || kind == .pirate)
+      && entities.contains(where: {
+        !$0.dead && ($0.kind == .rock || $0.kind == .pirate) && $0.y < spawnY + 140 && $0.lane == lane
+      })
+    {
+      return nil
+    }
+    let neighbors = entities.filter { !$0.dead && $0.lane == lane }
+    if kind == .pirate {
+      for e in neighbors where e.kind == .rock || e.kind == .heart { y = min(y, e.y - 120) }
+    }
+    for e in neighbors.sorted(by: { $0.y > $1.y }) {
+      let gap = kind == .pirate && e.kind == .pirate ? Self.pirateGap : 120
+      if abs(e.y - y) < gap { y = e.y - gap }
+    }
+    // A pirate's first shot comes within a second of entering the screen.
+    let entity = Entity(
+      id: nextID, kind: kind, lane: lane, y: y, cooldown: kind == .pirate ? random() : 1.5 + random(), pirateType: pirateType)
+    nextID += 1
+    entities.append(entity)
+    return entity
+  }
+  func choosePirate() -> PirateType {
+    var pool: [PirateType] = [.gunner, .gunner, .gunner, .gunner, .scout, .scout, .scout]
+    for type in PirateType.allCases where type != .gunner && type != .scout {
+      if type == .captain && (distance - lastCaptainDistance < 900 || entities.contains { !$0.dead && $0.kind == .pirate && $0.pirateType == .captain }) { continue }
+      pool.append(type)
+      if type != .captain { pool.append(type) }
+    }
+    return pool[min(pool.count - 1, Int(random() * Double(pool.count)))]
+  }
+  private func enemyShot(_ e: Entity, angle: Double = 0, velocity: Double? = nil, damage: Int = 15, targetX: Double? = nil) {
+    let shotX = e.x, shotY = e.y + 43
+    let direction = atan2(Self.playerY - shotY, (targetX ?? x) - shotX) + angle
+    let v = velocity ?? Double(265 + level * 8)
+    bullets.append(Bullet(x: shotX, y: shotY, vx: cos(direction) * v, vy: sin(direction) * v, enemy: true, damage: damage))
+    e.flash = 0.12
+    onEvent("enemyFire")
+  }
+  private func updatePirate(_ e: Entity, _ dt: Double) {
+    if e.burstLeft > 0 {
+      e.burstTimer -= dt
+      if e.burstTimer <= 0 { enemyShot(e); e.burstLeft -= 1; e.burstTimer = 0.18 }
+      return
+    }
+    if e.warning > 0 {
+      e.warning = max(0, e.warning - dt)
+      if e.warning > 0 { return }
+      switch e.pirateType {
+      case .sniper: enemyShot(e, velocity: 480, damage: 25, targetX: e.aimX); e.cooldown = 3.4; return
+      case .captain:
+        if e.attackStep % 2 == 0 { enemyShot(e); e.burstLeft = 2; e.burstTimer = 0.18 }
+        else { for angle in [-0.26, 0, 0.26] { enemyShot(e, angle: angle) } }
+        e.attackStep += 1
+        e.cooldown = e.hp <= 5 ? 1.6 : 2.7
+        return
+      default: break
+      }
+    }
+    e.cooldown -= dt
+    if e.cooldown > 0 { return }
+    switch e.pirateType {
+    case .sniper: e.aimX = x; e.warning = 1.1
+    case .captain: e.aimX = x; e.warning = 0.65
+    case .scatter:
+      for angle in [-0.26, 0, 0.26] { enemyShot(e, angle: angle) }
+      e.cooldown = 3.2
+    case .burst: enemyShot(e); e.burstLeft = 2; e.burstTimer = 0.18; e.cooldown = 3.2
+    case .scout: enemyShot(e); e.cooldown = 1.4
+    case .gunner: enemyShot(e); e.cooldown = max(1.1, 2.6 - Double(level) * 0.1)
+    }
+  }
+  func update(_ delta: Double) {
+    let dt = max(0, min(0.05, delta))
+    if status == .intro {
+      elapsed += dt
+      // The water is calm at the shore, then rushes past as the boat sets sail.
+      let p = 1 - introTime / Self.introDuration
+      scroll += dt * speed * (p < Self.introLandShare ? 0.2 : 4)
+      introTime = max(0, introTime - dt)
+      if introTime == 0 { status = .playing }
+      return
+    }
+    guard status == .playing else { return }
+    elapsed += dt
+    scroll += dt * speed
+    if outro > 0 {
+      // Sailing up to the treasure island: nothing can hurt the boat now.
+      outro = max(0, outro - dt)
+      if outro == 0 {
+        status = .won
+        firing = false
+        onEvent("won")
+      }
+      return
+    }
+    if !bossActive {
+      distance += dt * speed * 0.12
+      let nextLevel = min(Self.maxLevel, 1 + Int(floor(distance / 300)))
+      if level != nextLevel {
+        level = nextLevel
+        onEvent("level")
+      }
+      if score >= Self.maxScore { startBoss() }
+    }
+    let dx = Self.lanes[lane] - x
+    x += dx * (1 - exp(-15 * dt))
+    tilt += (max(-0.23, min(0.23, dx / 170)) - tilt) * min(1, dt * 12)
+    jumpTime = max(0, jumpTime - dt)
+    jumpCooldown = max(0, jumpCooldown - dt)
+    invincible = max(0, invincible - dt)
+    fireCooldown = max(0, fireCooldown - dt)
+    if firing { fire() }
+    spawnTimer -= dt
+    pickupTimer -= dt
+    pirateTimer -= dt
+    if let k = kraken { updateKraken(k, dt); if status == .over { return } }
+    if spawnTimer <= 0 && !bossActive {
+      spawn(.rock)
+      spawnTimer = max(0.9, 1.8 - Double(level) * 0.07) + random() * 0.5
+    }
+    if pickupTimer <= 0 {
+      if random() < 0.58 { spawn(.heart) }
+      pickupTimer = 10 + random() * 5  // a new heart chance every 10–15 s
+    }
+    if pirateTimer <= 0 && !bossActive {
+      let type = choosePirate()
+      if spawn(.pirate, pirateType: type) != nil && type == .captain { lastCaptainDistance = distance }
+      pirateTimer = max(3, 7 - Double(level) * 0.35) + random() * 2
+    }
+    for e in entities {
+      var nextY = e.y + speed * dt * (e.kind == .pirate ? (e.pirateType == .captain ? 0.32 : 0.44) : 1)
+      if e.kind == .pirate {
+        for ahead in entities where !ahead.dead && ahead.kind == .pirate && ahead.lane == e.lane && ahead.y > e.y {
+          nextY = min(nextY, ahead.y - Self.pirateGap)
+        }
+      }
+      e.y = max(e.y, nextY)
+      e.hit = max(0, e.hit - dt)
+      e.flash = max(0, e.flash - dt)
+      // Preserve the iOS viewport rule: visible ships can attack until they leave.
+      if e.kind == .pirate && e.y > visibleTop && !e.dead { updatePirate(e, dt) }
+      if !e.dead && abs(e.x - x) < 43 && abs(e.y - Self.playerY) < (e.kind == .pirate ? 64 : 42) {
+        switch e.kind {
+        case .heart:
+          health = min(100, health + 10)
+          heartsCollected += 1
+          bonus += 50
+          e.dead = true
+          onEvent("heart")
+        case .rock: if !jumping && damage(25) { e.dead = true }  // the boat sails over rocks
+        case .pirate: if damage(30) { e.dead = true }
+        }
+        if status == .over { return }
+      }
+      if e.y > visibleBottom + 100 { e.dead = true }
+    }
+    for b in bullets {
+      if b.dead { continue }
+      b.x += b.vx * dt
+      b.y += b.vy * dt
+      if b.enemy {
+        if abs(b.x - x) < 20 + b.radius && abs(b.y - Self.playerY) < 34 + b.radius {
+          damage(b.damage)
+          b.dead = true
+          if status == .over { return }
+        }
+      } else {
+        if let k = kraken, k.surfaced, k.dying == 0, b.y < k.y + 70, abs(b.x - 400) < 240 {
+          b.dead = true
+          k.hp -= 1
+          k.hit = 0.13
+          if k.hp <= 0 {
+            k.dying = 1.6
+            k.warningLanes = []
+            k.slamLanes = []
+            k.warning = 0
+            k.slam = 0
+            onEvent("krakenDefeated")
+          } else {
+            onEvent(k.hp == Self.krakenRageHP ? "krakenRage" : "hit")
+          }
+          continue
+        }
+        for e in entities {
+          if e.kind != .pirate || e.dead || abs(e.x - b.x) > 34 || abs(e.y - b.y) > 52 { continue }
+          e.hp -= 1
+          e.hit = 0.13
+          b.dead = true
+          if e.hp <= 0 {
+            e.dead = true
+            piratesSunk += 1
+            lastSunkName = e.pirateType.stats.name
+            lastSunkReward = e.pirateType.stats.reward
+            bonus += lastSunkReward
+            onEvent("sink")
+          } else {
+            onEvent("hit")
+          }
+          break
+        }
+      }
+      if b.x < -30 || b.x > 830 || b.y < visibleTop - 30 || b.y > visibleBottom + 50 {
+        b.dead = true
+      }
+    }
+    entities.removeAll { $0.dead }
+    bullets.removeAll { $0.dead }
+  }
+}
