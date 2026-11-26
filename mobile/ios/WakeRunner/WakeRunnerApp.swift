@@ -78,6 +78,10 @@ final class GameModel: ObservableObject {
     game.pause()
     frame &+= 1
   }
+  /// Continues a finished voyage after the rewarded ad was watched to the end.
+  func revive() {
+    if game.revive() { frame &+= 1 }
+  }
   func saveBest() {
     if game.score > best {
       best = game.score
@@ -95,12 +99,13 @@ final class GameModel: ObservableObject {
     case "heart": notice = Notice("+10 hull · +50 points", "heart.fill", .heart)
     case "sink": notice = Notice("\(game.lastSunkName) sunk · +\(game.lastSunkReward) points", "flag.checkered", .gold)
     case "level": notice = Notice("Level \(game.level) · rougher waters", "wind", .mint)
+    case "revive": notice = Notice("Second wind · \(Game.reviveHealth) hull", "heart.fill", .mint)
     case "over":
       saveBest()
       frame &+= 1
     default: break
     }
-    if ["damage", "jump", "heart", "sink", "level"].contains(event) {
+    if ["damage", "jump", "heart", "sink", "level", "revive"].contains(event) {
       noticeUntil = CACurrentMediaTime() + 1.6
     }
     if sound && ["fire", "damage", "heart", "jump", "sink"].contains(event) { playTone(event) }
@@ -305,6 +310,7 @@ struct CompatNavigation<Content: View>: View {
 struct GameScreen: View {
   @ObservedObject var model: GameModel
   @State private var help = false
+  @State private var watchingAd = false
   @State private var firePressed = false
   @Environment(\.dynamicTypeSize) private var typeSize
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -355,6 +361,15 @@ struct GameScreen: View {
     .roundedDesign()
     .statusBarHidden(true)
     .sheet(isPresented: $help) { handbook }
+    .fullScreenCover(isPresented: $watchingAd) {
+      // Swap PlaceholderAdView for a real rewarded ad (and PlaceholderRewardedAds on Android).
+      PlaceholderAdView(
+        onReward: {
+          watchingAd = false
+          model.revive()
+        },
+        onClose: { watchingAd = false })
+    }
   }
 
   // MARK: HUD
@@ -490,6 +505,7 @@ struct GameScreen: View {
           title
           if status == .over { results }
           bestChip
+          if status == .over { continueButton }
           Button(action: model.startOrResume) {
             Label(
               status == .paused
@@ -500,7 +516,8 @@ struct GameScreen: View {
             .font(.title3.weight(.black))
             .frame(maxWidth: .infinity, minHeight: 60)
           }
-          .buttonStyle(ClayButtonStyle(kind: .primary, radius: 22))
+          // After a game over the ad continue is the main action; a fresh voyage is secondary.
+          .buttonStyle(ClayButtonStyle(kind: status == .over ? .secondary : .primary, radius: 22))
           Group {
             if typeSize.isAccessibilitySize {
               VStack(spacing: 12) { soundOption; helpOption }
@@ -576,6 +593,25 @@ struct GameScreen: View {
     .accessibilityElement(children: .combine)
   }
 
+  /// "Watch ad to continue": plays a rewarded ad, then revives this voyage. Unlimited.
+  private var continueButton: some View {
+    Button {
+      watchingAd = true
+    } label: {
+      VStack(spacing: 3) {
+        Label("Watch ad to continue", systemImage: "play.rectangle.fill")
+          .font(.title3.weight(.black))
+        Text("Back in with \(Game.reviveHealth)% hull")
+          .font(.caption.weight(.heavy)).opacity(0.75)
+      }
+      .frame(maxWidth: .infinity, minHeight: 64)
+      .padding(.vertical, 4)
+    }
+    .buttonStyle(ClayButtonStyle(kind: .primary, radius: 22))
+    .accessibilityLabel("Watch ad to continue")
+    .accessibilityHint("Continues this voyage with \(Game.reviveHealth) percent hull.")
+  }
+
   private var bestChip: some View {
     Label {
       Text("Personal best  \(scoreDigits(model.best))").monospacedDigit()
@@ -645,7 +681,7 @@ struct GameScreen: View {
       ("scope", Theme.gold, "Fire",
        "Hold Fire to shoot ahead. Tap a pirate or mine to aim across lanes. Each hit removes one health pip; tougher ships earn more points."),
       ("arrow.up.circle.fill", Theme.gold, "Jump",
-       "Swipe up any time to jump over rocks, ships and cannonballs for 1.15 seconds. Jumps never run out: after landing, you can jump again two seconds later."),
+       "Swipe up any time to jump over rocks for 1.15 seconds. Ships, cannonballs and mines still hit you in the air. Jumps never run out: after landing, you can jump again two seconds later."),
       ("heart.fill", Theme.heart, "Hull",
        "Hearts repair 10 hull. Rocks cost 25 hull; cannonballs cost 15, or 25 for heavy and sniper shots. Mines cost 25, ships 30, and charging Rammers 40."),
       ("flag.fill", Theme.gold, "Pirate fleet",
@@ -687,6 +723,73 @@ struct GameScreen: View {
         ToolbarItem(placement: .confirmationAction) {
           Button("Done") { help = false }.font(.body.weight(.heavy)).tint(Theme.gold)
         }
+      }
+    }
+  }
+}
+
+/// Stand-in rewarded ad: a full-screen countdown. `onReward` runs only when it was watched to
+/// the end; closing early calls `onClose` alone. Matches PlaceholderRewardedAds on Android.
+struct PlaceholderAdView: View {
+  var seconds = 5
+  let onReward: () -> Void
+  let onClose: () -> Void
+  @State private var elapsed = 0
+  private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+  private var remaining: Int { max(0, seconds - elapsed) }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HStack {
+        Text("AD").font(.caption.weight(.black)).tracking(1.4).foregroundStyle(Theme.ink)
+          .padding(.horizontal, 10).padding(.vertical, 4)
+          .background(Theme.gold, in: Capsule())
+        Spacer()
+        Button(action: onClose) {
+          Image(systemName: "xmark").font(.system(size: 16, weight: .black))
+            .frame(width: 44, height: 44)
+        }
+        .buttonStyle(ClayButtonStyle(radius: 22))
+        .accessibilityLabel("Close ad without reward")
+      }
+      Spacer()
+      ZStack {
+        Circle().stroke(Theme.surface, lineWidth: 10)
+        Circle()
+          .trim(from: 0, to: CGFloat(elapsed) / CGFloat(seconds))
+          .stroke(Theme.gold, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+          .rotationEffect(.degrees(-90))
+          .animation(.linear(duration: 1), value: elapsed)
+        if remaining > 0 {
+          Text("\(remaining)").font(.system(size: 48, weight: .black)).monospacedDigit()
+        } else {
+          Image(systemName: "checkmark").font(.system(size: 48, weight: .black)).foregroundStyle(Theme.gold)
+        }
+      }
+      .frame(width: 140, height: 140)
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(remaining > 0 ? "\(remaining) seconds left" : "Reward ready")
+      Text("Placeholder ad").font(.title2.weight(.black)).padding(.top, 20)
+      Text("A real rewarded ad will play here.")
+        .font(.subheadline.weight(.bold)).foregroundStyle(Theme.creamMuted).padding(.top, 8)
+      Spacer()
+      Button(action: onReward) {
+        Label(remaining > 0 ? "Reward in \(remaining)s" : "Continue voyage", systemImage: "play.fill")
+          .font(.title3.weight(.black))
+          .frame(maxWidth: .infinity, minHeight: 60)
+      }
+      .buttonStyle(ClayButtonStyle(kind: .primary, radius: 22))
+      .disabled(remaining > 0)
+    }
+    .padding(20)
+    .background(Theme.ink.ignoresSafeArea())
+    .foregroundStyle(Theme.cream)
+    .multilineTextAlignment(.center)
+    .roundedDesign()
+    .onReceive(timer) { _ in
+      if elapsed < seconds {
+        elapsed += 1
+        if remaining == 0 { UIAccessibility.post(notification: .announcement, argument: "Reward ready") }
       }
     }
   }

@@ -26,7 +26,6 @@ final class GameTests: XCTestCase {
     XCTAssertEqual(g.health, 75)
     g.invincible = 0
     XCTAssertTrue(g.jump())
-    XCTAssertFalse(g.damage(25))
     XCTAssertFalse(g.jump())
     XCTAssertFalse(g.jumpReady)
   }
@@ -115,6 +114,43 @@ final class GameTests: XCTestCase {
     g.update(0.01)
     XCTAssertTrue(g.bullets.contains { $0.enemy })
   }
+  func testReviveContinuesVoyageAfterAd() {
+    let g = game()
+    g.distance = 400
+    g.bonus = 300
+    g.update(0)
+    let score = g.score, level = g.level
+    let near = g.spawn(.rock, lane: 0, y: Game.playerY - 100)!
+    let far = g.spawn(.rock, lane: 2, y: Game.playerY - 500)!
+    let heart = g.spawn(.heart, lane: 3, y: Game.playerY - 100)!
+    g.bullets.append(Bullet(x: g.x, y: 300, vx: 0, vy: 100, enemy: true))
+    g.bullets.append(Bullet(x: g.x, y: 300, vx: 0, vy: -650, enemy: false))
+    XCTAssertFalse(g.revive(), "only a finished voyage can be revived")
+    g.damage(100)
+    XCTAssertEqual(g.status, .over)
+    var revived = false
+    g.onEvent = { if $0 == "revive" { revived = true } }
+    XCTAssertTrue(g.revive())
+    XCTAssertTrue(revived)
+    XCTAssertEqual(g.status, .playing)
+    XCTAssertEqual(g.health, Game.reviveHealth)
+    XCTAssertEqual(g.score, score)
+    XCTAssertEqual(g.level, level)
+    XCTAssertEqual(g.revives, 1)
+    XCTAssertFalse(g.entities.contains { $0 === near })
+    XCTAssertTrue(g.entities.contains { $0 === far })
+    XCTAssertTrue(g.entities.contains { $0 === heart })
+    XCTAssertFalse(g.bullets.contains { $0.enemy })
+    XCTAssertEqual(g.bullets.count, 1)
+    XCTAssertFalse(g.damage(25), "grace period after reviving")
+    // Unlimited: every game over can be continued.
+    g.invincible = 0
+    g.damage(100)
+    XCTAssertTrue(g.revive())
+    XCTAssertEqual(g.revives, 2)
+    g.reset()
+    XCTAssertEqual(g.revives, 0)
+  }
   func testJumpRechargePausesWithGame() {
     let g = game()
     XCTAssertTrue(g.jump())
@@ -179,15 +215,32 @@ final class GameTests: XCTestCase {
     for _ in 0..<15 { g.update(0.01) }
     XCTAssertEqual(e.flash, 0, accuracy: 0.00001)
   }
-  func testEnemyShotsPassUnderJumpingBoat() {
-    let g = game()
-    g.jump()
-    let b = Bullet(x: g.x, y: Game.playerY, vx: 0, vy: 200, enemy: true)
-    g.bullets.append(b)
-    g.update(0.01)
-    XCTAssertEqual(g.health, 100)
-    XCTAssertFalse(b.dead)
-    XCTAssertGreaterThan(b.y, Game.playerY)
+  func testJumpClearsRocksOnly() {
+    let rocky = game()
+    let rock = rocky.spawn(.rock, lane: 1, y: Game.playerY)!
+    XCTAssertTrue(rocky.jump())
+    rocky.update(0)
+    XCTAssertEqual(rocky.health, 100, "rocks pass under the jumping boat")
+    XCTAssertTrue(rocky.entities.contains { $0 === rock })
+    let shot = game()
+    XCTAssertTrue(shot.jump())
+    let b = Bullet(x: shot.x, y: Game.playerY, vx: 0, vy: 200, enemy: true)
+    shot.bullets.append(b)
+    shot.update(0.01)
+    XCTAssertEqual(shot.health, 85, "cannonballs still hit mid-air")
+    XCTAssertTrue(b.dead)
+    let ship = game()
+    ship.spawn(.pirate, lane: 1, y: Game.playerY)
+    XCTAssertTrue(ship.jump())
+    ship.update(0)
+    XCTAssertEqual(ship.health, 70, "ships still hit mid-air")
+    let mined = game()
+    XCTAssertTrue(mined.jump())
+    let mine = Bullet(x: mined.x, y: Game.playerY, vx: 0, vy: 0, enemy: true, damage: 25, mine: true)
+    mine.armTime = 0
+    mined.bullets.append(mine)
+    mined.update(0)
+    XCTAssertEqual(mined.health, 75, "mines still hit mid-air")
   }
   func testPauseFreezesAndReleasesFire() {
     let g = game()

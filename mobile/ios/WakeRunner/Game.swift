@@ -77,6 +77,12 @@ final class Game {
   static let pirateGap = 220.0
   /// Jumps are unlimited; after landing the boat needs this long before it can jump again.
   static let jumpRecharge = 2.0
+  /// Hull after watching an ad to continue a finished voyage.
+  static let reviveHealth = 20
+  /// Seconds of invincibility after a revive, so the boat is not hit straight away.
+  static let reviveGrace = 2.0
+  /// Hazards closer than this above the boat are cleared on revive.
+  static let reviveClearance = 360.0
   let random: () -> Double
   var onEvent: (String) -> Void = { _ in }
   var status = GameStatus.ready
@@ -104,6 +110,8 @@ final class Game {
   var lastSunkReward = 250
   var piratesSunk = 0
   var heartsCollected = 0
+  /// Times this voyage was continued after an ad. Unlimited.
+  var revives = 0
   var entities: [Entity] = []
   var bullets: [Bullet] = []
   private var spawnTimer = 1.3
@@ -140,6 +148,7 @@ final class Game {
     lastSunkReward = 250
     piratesSunk = 0
     heartsCollected = 0
+    revives = 0
     entities = []
     bullets = []
     spawnTimer = 1.3
@@ -180,6 +189,23 @@ final class Game {
     onEvent("fire")
     return true
   }
+  /// Continues a finished voyage (after a rewarded ad) with score, distance and level kept.
+  /// Nearby hazards and enemy shots are cleared and the boat gets a short grace period.
+  @discardableResult func revive() -> Bool {
+    guard status == .over else { return false }
+    status = .playing
+    health = Self.reviveHealth
+    invincible = Self.reviveGrace
+    jumpTime = 0
+    jumpCooldown = 0
+    fireCooldown = 0
+    firing = false
+    entities.removeAll { $0.kind != .heart && $0.y > Self.playerY - Self.reviveClearance }
+    bullets.removeAll { $0.enemy }
+    revives += 1
+    onEvent("revive")
+    return true
+  }
   func pause() {
     if status == .playing {
       status = .paused
@@ -189,7 +215,8 @@ final class Game {
     }
   }
   @discardableResult func damage(_ amount: Int) -> Bool {
-    guard status == .playing, invincible <= 0, !jumping else { return false }
+    // Jumping only clears rocks (see update); ships, cannonballs and mines still hit mid-air.
+    guard status == .playing, invincible <= 0 else { return false }
     health = max(0, health - amount)
     invincible = 1.15
     onEvent("damage")
@@ -374,7 +401,8 @@ final class Game {
           bonus += 50
           e.dead = true
           onEvent("heart")
-        default: if !jumping && damage(e.kind == .rock ? 25 : e.pirateType == .rammer && e.charging ? 40 : 30) { e.dead = true }
+        case .rock: if !jumping && damage(25) { e.dead = true }  // the boat sails over rocks
+        case .pirate: if damage(e.pirateType == .rammer && e.charging ? 40 : 30) { e.dead = true }
         }
         if status == .over { return }
       }
@@ -386,7 +414,7 @@ final class Game {
       b.x += b.vx * dt
       b.y += b.vy * dt
       if b.enemy {
-        if !jumping && b.armTime <= 0 && abs(b.x - x) < 20 + b.radius && abs(b.y - Self.playerY) < 34 + b.radius {
+        if b.armTime <= 0 && abs(b.x - x) < 20 + b.radius && abs(b.y - Self.playerY) < 34 + b.radius {
           damage(b.damage)
           b.dead = true
           if status == .over { return }

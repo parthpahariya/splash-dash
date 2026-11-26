@@ -24,6 +24,8 @@ import kotlin.math.min
 /** Mirrors the SwiftUI GameScreen in WakeRunnerApp.swift: clay HUD, menu card and handbook. */
 class MainActivity : Activity(), Choreographer.FrameCallback {
     private val game = Game()
+    /** Swap for a real ad network; see RewardedAd.kt. */
+    private val ads: RewardedAds = PlaceholderRewardedAds()
     private val prefs by lazy { getSharedPreferences("wake-runner", MODE_PRIVATE) }
     private var best = 0
     private var sound = false
@@ -65,6 +67,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
                 "heart" -> notice("+10 hull · +50 points", "heart", Clay.heart)
                 "sink" -> notice("${game.lastSunkName} sunk · +${game.lastSunkReward} points", "flag", Clay.gold)
                 "level" -> notice("Level ${game.level} · rougher waters", "wind", Clay.mint)
+                "revive" -> notice("Second wind · ${Game.REVIVE_HEALTH} hull", "heart", Clay.mint)
                 "over" -> if (::water.isInitialized) water.announceForAccessibility("Voyage complete. Score ${game.score}.")
             }
             if (sound && event in listOf("fire", "damage", "heart", "jump", "sink")) {
@@ -337,10 +340,12 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             addView(icon("trophy", Clay.gold, 16))
             addView(text(15f, Clay.creamMuted, 800).apply { text = "Personal best  ${Clay.digits(best)}"; fontFeatureSettings = "tnum" })
         })
+        if (status == Status.OVER) add(continueButton(), LinearLayout.LayoutParams(-1, -2))
         add(clayButton(
             when (status) { Status.PAUSED -> "Back to the water"; Status.OVER -> "One more voyage"; else -> "Set sail" },
             when (status) { Status.PAUSED -> "play"; Status.OVER -> "restart"; else -> "sailboat" },
-            primary = true, radius = 22, size = 20f, minHeight = 60,
+            // After a game over the ad continue is the main action; a fresh voyage is secondary.
+            primary = status != Status.OVER, radius = 22, size = 20f, minHeight = 60,
         ) { if (game.status == Status.PAUSED) game.pause() else game.reset(); updateHUD() }, LinearLayout.LayoutParams(-1, -2))
         val options = if (accessibleText) column(12) else row(12)
         val soundButton = clayButton(if (sound) "Sound on" else "Sound off", if (sound) "speaker.on" else "speaker.off", radius = 16) {
@@ -352,6 +357,27 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         options.addView(helpButton, if (accessibleText) LinearLayout.LayoutParams(-1, -2) else LinearLayout.LayoutParams(0, -2, 1f))
         add(options, LinearLayout.LayoutParams(-1, -2))
         if (status == Status.READY) add(tips(), LinearLayout.LayoutParams(-1, -2))
+    }
+
+    /** "Watch ad to continue": plays a rewarded ad, then revives this voyage. Unlimited. */
+    private fun continueButton() = column(3).apply {
+        gravity = Gravity.CENTER
+        addView(row(8).apply {
+            gravity = Gravity.CENTER
+            addView(icon("ad", Clay.ink, 23))
+            addView(text(20f, Clay.ink, 900).apply { text = "Watch ad to continue" })
+        }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL })
+        addView(text(12f, Clay.alpha(Clay.ink, .75f), 800).apply { text = "Back in with ${Game.REVIVE_HEALTH}% hull" },
+            LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL })
+        background = clay(Clay.goldTop, Clay.gold, 22)
+        minimumHeight = dp(64) + depth
+        setPadding(dp(14), dp(10), dp(14), dp(10) + depth)
+        isClickable = true; isFocusable = true; asButton(this)
+        contentDescription = "Watch ad to continue. Continues this voyage with ${Game.REVIVE_HEALTH} percent hull."
+        setOnClickListener {
+            isEnabled = false
+            ads.show(this@MainActivity, onReward = { game.revive(); updateHUD() }, onClose = { isEnabled = true })
+        }
     }
 
     private fun stat(symbol: String, value: String, label: String) = column(2).apply {
@@ -466,7 +492,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         val rules = listOf(
             listOf("swipe", Clay.mint, "Steer", "Swipe left or right across the water to change lanes. Screen-reader actions on the waterway also let you steer and jump."),
             listOf("scope", Clay.gold, "Fire", "Hold Fire to shoot ahead. Tap a pirate or mine to aim across lanes. Each hit removes one health pip; tougher ships earn more points."),
-            listOf("arrow.up", Clay.gold, "Jump", "Swipe up any time to jump over rocks, ships and cannonballs for 1.15 seconds. Jumps never run out: after landing, you can jump again two seconds later."),
+            listOf("arrow.up", Clay.gold, "Jump", "Swipe up any time to jump over rocks for 1.15 seconds. Ships, cannonballs and mines still hit you in the air. Jumps never run out: after landing, you can jump again two seconds later."),
             listOf("heart", Clay.heart, "Hull", "Hearts repair 10 hull. Rocks cost 25 hull; cannonballs cost 15, or 25 for heavy and sniper shots. Mines cost 25, ships 30, and charging Rammers 40."),
             listOf("flag", Clay.gold, "Pirate fleet", "Scout 1 hull · Gunner 2 · Burst Raider 3 · Scattershot 3 · Sharpshooter 2 · Rammer 4 · Minelayer 3 · Ironclad 6 · Captain 10. New types arrive as levels increase."),
             listOf("warning", Clay.danger, "Read the attack", "Dodge aimed shots and three-shot bursts, find gaps in spreads, and use long reloads to attack. A Sharpshooter marks its aim before firing; move after the lock. Rammers warn before charging. Shoot mines to clear a path. Captains alternate bursts and spreads and attack faster at half health."),

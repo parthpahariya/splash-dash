@@ -13,8 +13,7 @@ class GameTest {
     }
     @Test fun damageGraceAndJumpProtection() {
         val g = game(); assertTrue(g.damage(25)); assertFalse(g.damage(25)); assertEquals(75, g.health)
-        g.invincible = 0.0; assertTrue(g.jump()); assertFalse(g.damage(25)); assertFalse(g.jump())
-        assertFalse(g.jumpReady)
+        g.invincible = 0.0; assertTrue(g.jump()); assertFalse(g.jump()); assertFalse(g.jumpReady)
     }
     @Test fun jumpIsUnlimitedAfterRecharge() {
         val g = game(); g.invincible = 1000.0
@@ -25,6 +24,26 @@ class GameTest {
             repeat(40) { g.update(.05) } // past the 2 s recharge
             assertTrue(g.jumpReady); assertEquals(1.0, g.jumpCharge, .001)
         }
+    }
+    @Test fun reviveContinuesVoyageAfterAd() {
+        val g = game(); g.distance = 400.0; g.bonus = 300; g.update(0.0)
+        val score = g.score; val level = g.level
+        val near = g.spawn(Kind.ROCK, 0, Game.PLAYER_Y - 100)!!
+        val far = g.spawn(Kind.ROCK, 2, Game.PLAYER_Y - 500)!!
+        val heart = g.spawn(Kind.HEART, 3, Game.PLAYER_Y - 100)!!
+        g.bullets.add(Bullet(g.x, 300.0, 0.0, 100.0, true)); g.bullets.add(Bullet(g.x, 300.0, 0.0, -650.0, false))
+        assertFalse("only a finished voyage can be revived", g.revive())
+        g.damage(100); assertEquals(Status.OVER, g.status)
+        var revived = false; g.onEvent = { if (it == "revive") revived = true }
+        assertTrue(g.revive()); assertTrue(revived)
+        assertEquals(Status.PLAYING, g.status); assertEquals(Game.REVIVE_HEALTH, g.health)
+        assertEquals(score, g.score); assertEquals(level, g.level); assertEquals(1, g.revives)
+        assertFalse(near in g.entities); assertTrue(far in g.entities); assertTrue(heart in g.entities)
+        assertTrue(g.bullets.none { it.enemy }); assertEquals(1, g.bullets.size)
+        assertFalse("grace period after reviving", g.damage(25))
+        // Unlimited: every game over can be continued.
+        g.invincible = 0.0; g.damage(100); assertTrue(g.revive()); assertEquals(2, g.revives)
+        g.reset(); assertEquals(0, g.revives)
     }
     @Test fun jumpRechargePausesWithGame() {
         val g = game(); assertTrue(g.jump()); g.pause(); g.update(5.0); assertFalse(g.jumpReady)
@@ -109,10 +128,18 @@ class GameTest {
         assertTrue(b.vx < 0 && b.vy > 0); assertTrue(e.flash > 0)
         repeat(15) { g.update(.01) }; assertEquals(0.0, e.flash, .00001)
     }
-    @Test fun enemyShotsPassUnderJumpingBoat() {
-        val g = game(); g.jump()
-        val b = Bullet(g.x, Game.PLAYER_Y, 0.0, 200.0, true); g.bullets.add(b); g.update(.01)
-        assertEquals(100, g.health); assertFalse(b.dead); assertTrue(b.y > Game.PLAYER_Y)
+    @Test fun jumpClearsRocksOnly() {
+        val rocky = game(); val rock = rocky.spawn(Kind.ROCK, 1, Game.PLAYER_Y)!!
+        assertTrue(rocky.jump()); rocky.update(0.0)
+        assertEquals("rocks pass under the jumping boat", 100, rocky.health); assertTrue(rock in rocky.entities)
+        val shot = game(); assertTrue(shot.jump())
+        val b = Bullet(shot.x, Game.PLAYER_Y, 0.0, 200.0, true); shot.bullets.add(b); shot.update(.01)
+        assertEquals("cannonballs still hit mid-air", 85, shot.health); assertTrue(b.dead)
+        val ship = game(); ship.spawn(Kind.PIRATE, 1, Game.PLAYER_Y); assertTrue(ship.jump()); ship.update(0.0)
+        assertEquals("ships still hit mid-air", 70, ship.health)
+        val mined = game(); assertTrue(mined.jump())
+        mined.bullets.add(Bullet(mined.x, Game.PLAYER_Y, 0.0, 0.0, true, 25, true).apply { armTime = 0.0 }); mined.update(0.0)
+        assertEquals("mines still hit mid-air", 75, mined.health)
     }
     @Test fun pauseFreezesAndReleasesFire() {
         val g = game(); g.firing = true; g.pause(); g.update(1.0)

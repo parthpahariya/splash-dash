@@ -44,6 +44,12 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
         const val PIRATE_GAP = 220.0
         /** Jumps are unlimited; after landing the boat needs this long before it can jump again. */
         const val JUMP_RECHARGE = 2.0
+        /** Hull after watching an ad to continue a finished voyage. */
+        const val REVIVE_HEALTH = 20
+        /** Seconds of invincibility after a revive, so the boat is not hit straight away. */
+        const val REVIVE_GRACE = 2.0
+        /** Hazards closer than this above the boat are cleared on revive. */
+        const val REVIVE_CLEARANCE = 360.0
         /** A lane never holds more than this many rocks back to back. */
         const val MAX_ROCKS_IN_A_ROW = 2
         /**
@@ -79,6 +85,8 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
     var lastSunkReward = 250
     var piratesSunk = 0
     var heartsCollected = 0
+    /** Times this voyage was continued after an ad. Unlimited. */
+    var revives = 0
     val entities = mutableListOf<Entity>()
     val bullets = mutableListOf<Bullet>()
     private var spawnTimer = 1.3
@@ -99,7 +107,7 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
         jumpTime = 0.0; jumpCooldown = 0.0; invincible = 0.0; fireCooldown = 0.0; firing = false
         distance = 0.0; bonus = 0; elapsed = 0.0; scroll = 0.0; level = 1
         lastSunkName = "Gunner"; lastSunkReward = 250
-        piratesSunk = 0; heartsCollected = 0
+        piratesSunk = 0; heartsCollected = 0; revives = 0
         entities.clear(); bullets.clear()
         spawnTimer = 1.3; pickupTimer = 4.8; pirateTimer = 5.0; nextID = 0; lastCaptainDistance = -900.0
         onEvent("start")
@@ -125,6 +133,21 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
         bullets.add(Bullet(x, y, dx / d * 650, dy / d * 650, false))
         fireCooldown = .25; onEvent("fire"); return true
     }
+    /**
+     * Continues a finished voyage (after a rewarded ad) with score, distance and level kept.
+     * Nearby hazards and enemy shots are cleared and the boat gets a short grace period.
+     */
+    fun revive(): Boolean {
+        if (status != Status.OVER) return false
+        status = Status.PLAYING
+        health = REVIVE_HEALTH; invincible = REVIVE_GRACE
+        jumpTime = 0.0; jumpCooldown = 0.0; fireCooldown = 0.0; firing = false
+        entities.removeAll { it.kind != Kind.HEART && it.y > PLAYER_Y - REVIVE_CLEARANCE }
+        bullets.removeAll { it.enemy }
+        revives++
+        onEvent("revive")
+        return true
+    }
     fun pause() {
         when (status) {
             Status.PLAYING -> { status = Status.PAUSED; firing = false }
@@ -133,7 +156,8 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
         }
     }
     fun damage(amount: Int): Boolean {
-        if (status != Status.PLAYING || invincible > 0 || jumping) return false
+        // Jumping only clears rocks (see update); ships, cannonballs and mines still hit mid-air.
+        if (status != Status.PLAYING || invincible > 0) return false
         health = max(0, health - amount); invincible = 1.15; onEvent("damage")
         if (health == 0) { status = Status.OVER; firing = false; onEvent("over") }
         return true
@@ -261,7 +285,8 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
             if (!e.dead && abs(e.x - x) < 43 && abs(e.y - PLAYER_Y) < (if (e.kind == Kind.PIRATE) 64 else 42)) {
                 when (e.kind) {
                     Kind.HEART -> { health = min(100, health + 10); heartsCollected++; bonus += 50; e.dead = true; onEvent("heart") }
-                    else -> if (!jumping && damage(if (e.kind == Kind.ROCK) 25 else if (e.pirateType == PirateType.RAMMER && e.charging) 40 else 30)) e.dead = true
+                    Kind.ROCK -> if (!jumping && damage(25)) e.dead = true // the boat sails over rocks
+                    Kind.PIRATE -> if (damage(if (e.pirateType == PirateType.RAMMER && e.charging) 40 else 30)) e.dead = true
                 }
                 if (status == Status.OVER) return
             }
@@ -272,7 +297,7 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
             if (b.mine) b.armTime = max(0.0, b.armTime - dt)
             b.x += b.vx * dt; b.y += b.vy * dt
             if (b.enemy) {
-                if (!jumping && b.armTime <= 0 && abs(b.x - x) < 20 + b.radius && abs(b.y - PLAYER_Y) < 34 + b.radius) {
+                if (b.armTime <= 0 && abs(b.x - x) < 20 + b.radius && abs(b.y - PLAYER_Y) < 34 + b.radius) {
                     damage(b.damage); b.dead = true
                     if (status == Status.OVER) return
                 }

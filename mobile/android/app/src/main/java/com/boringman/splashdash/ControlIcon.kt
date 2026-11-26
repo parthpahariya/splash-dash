@@ -44,6 +44,13 @@ class ControlIcon(private val symbol: String, color: Int) : Drawable() {
         c.scale(bounds.width() / 24f, bounds.height() / 24f)
         fun line(x: Float, y: Float, x2: Float, y2: Float) = c.drawLine(x, y, x2, y2, stroke)
         when (symbol) {
+            "xmark" -> { stroke.strokeWidth = 3.2f; line(5f, 5f, 19f, 19f); line(19f, 5f, 5f, 19f); stroke.strokeWidth = 2.6f }
+            "check" -> { stroke.strokeWidth = 3.2f; c.drawPath(shape(4f, 12.5f, 9.5f, 18f, 20f, 6f, close = false), stroke); stroke.strokeWidth = 2.6f }
+            "ad" -> {
+                // Stands in for SF Symbol play.rectangle.fill.
+                box.set(2f, 4.5f, 22f, 19.5f); c.drawRoundRect(box, 3.5f, 3.5f, stroke)
+                c.drawPath(shape(9.5f, 8.5f, 16f, 12f, 9.5f, 15.5f), fill)
+            }
             "pause" -> {
                 box.set(5.5f, 4f, 10f, 20f); c.drawRoundRect(box, 1.5f, 1.5f, fill)
                 box.set(14f, 4f, 18.5f, 20f); c.drawRoundRect(box, 1.5f, 1.5f, fill)
