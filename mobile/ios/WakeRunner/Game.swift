@@ -4,16 +4,17 @@ import Foundation
 /// `intro` shows the treasure before a voyage; `won` means the treasure was claimed.
 enum GameStatus { case ready, intro, playing, paused, over, won }
 enum EntityKind { case rock, pirate, heart }
+/// Every type can appear from the start of a voyage; there is no unlock order.
 enum PirateType: CaseIterable {
   case scout, gunner, burst, scatter, sniper, captain
-  var stats: (name: String, hp: Int, color: String, unlock: Int, reward: Int) {
+  var stats: (name: String, hp: Int, color: String, reward: Int) {
     switch self {
-    case .scout: return ("Scout", 1, "E9CF80", 1, 125)
-    case .gunner: return ("Gunner", 2, "B85C52", 1, 250)
-    case .burst: return ("Burst Raider", 3, "B990D4", 2, 350)
-    case .scatter: return ("Scattershot", 3, "E69A53", 2, 350)
-    case .sniper: return ("Sharpshooter", 2, "DF6472", 3, 300)
-    case .captain: return ("Pirate Captain", 10, "F3C75F", 4, 1500)
+    case .scout: return ("Scout", 1, "E9CF80", 125)
+    case .gunner: return ("Gunner", 2, "B85C52", 250)
+    case .burst: return ("Burst Raider", 3, "B990D4", 350)
+    case .scatter: return ("Scattershot", 3, "E69A53", 350)
+    case .sniper: return ("Sharpshooter", 2, "DF6472", 300)
+    case .captain: return ("Pirate Captain", 10, "F3C75F", 1500)
     }
   }
 }
@@ -63,7 +64,7 @@ final class Bullet {
     self.enemy = enemy
   }
 }
-/// The Leviathan that guards the treasure at the end of the journey.
+/// The Leviathan that guards the treasure; it rises when the score reaches `Game.maxScore`.
 final class Kraken {
   var y: Double
   var hp = Game.krakenHP
@@ -88,16 +89,17 @@ final class Game {
   static let playerY = 665.0
   static let jumpDuration = 1.15
   static let pirateGap = 220.0
-  /// Metres from the harbour to the treasure island, where the Kraken waits.
-  static let journeyLength = 1500.0
-  static let krakenHP = 40
+  /// The Kraken rises at this score, and the score never goes higher.
+  static let maxScore = 999_999
+  /// The water stops getting faster at this level (every 300 m adds a level).
+  static let maxLevel = 5
+  static let krakenHP = 500
   /// At or below this health the Kraken rages: two-lane slams and shorter warnings.
-  static let krakenRageHP = 20
+  static let krakenRageHP = 250
   /// World y of the Kraken's head once it has surfaced at the top of the lanes.
   static let krakenY = 90.0
   static let slamDamage = 30
   static let slamDuration = 0.4
-  static let treasureBonus = 5000
   /// Seconds of the opening treasure scene before each voyage.
   static let introDuration = 3.5
   /// Share of the intro spent on the home shore before the fast-forward out to sea.
@@ -143,14 +145,12 @@ final class Game {
   var heartsCollected = 0
   /// Times this voyage was continued after an ad, up to `maxRevives`.
   var revives = 0
-  /// The Kraken fight has begun; normal rocks and pirates stop.
+  /// The Kraken fight has begun (the score reached `maxScore`); normal rocks and pirates stop.
   var bossActive = false
   var kraken: Kraken?
   /// Seconds left in the opening scene (`intro`) and the sail to the treasure.
   var introTime = 0.0
   var outro = 0.0
-  /// 0 at the harbour, 1 at the treasure island.
-  var journeyProgress: Double { min(1, distance / Self.journeyLength) }
   var canRevive: Bool { status == .over && revives < Self.maxRevives }
   var revivesLeft: Int { max(0, Self.maxRevives - revives) }
   var entities: [Entity] = []
@@ -160,7 +160,8 @@ final class Game {
   private var pirateTimer = 5.0
   private var nextID = 0
   private var lastCaptainDistance = -900.0
-  var score: Int { Int(floor(distance * 2)) + bonus }
+  /// Capped at `maxScore`, so it stops increasing once the Kraken rises.
+  var score: Int { min(Self.maxScore, Int(floor(distance * 2)) + bonus) }
   var speed: Double { 125 + Double(min(145, (level - 1) * 17)) }
   var jumping: Bool { jumpTime > 0 }
   var jumpReady: Bool { !jumping && jumpCooldown <= 0 }
@@ -411,7 +412,7 @@ final class Game {
   }
   func choosePirate() -> PirateType {
     var pool: [PirateType] = [.gunner, .gunner, .gunner, .gunner, .scout, .scout, .scout]
-    for type in PirateType.allCases where type.stats.unlock <= level && type != .gunner && type != .scout {
+    for type in PirateType.allCases where type != .gunner && type != .scout {
       if type == .captain && (distance - lastCaptainDistance < 900 || entities.contains { !$0.dead && $0.kind == .pirate && $0.pirateType == .captain }) { continue }
       pool.append(type)
       if type != .captain { pool.append(type) }
@@ -484,13 +485,13 @@ final class Game {
       return
     }
     if !bossActive {
-      distance = min(Self.journeyLength, distance + dt * speed * 0.12)
-      let nextLevel = 1 + Int(floor(min(distance, Self.journeyLength - 1) / 300))
+      distance += dt * speed * 0.12
+      let nextLevel = min(Self.maxLevel, 1 + Int(floor(distance / 300)))
       if level != nextLevel {
         level = nextLevel
         onEvent("level")
       }
-      if distance >= Self.journeyLength { startBoss() }
+      if score >= Self.maxScore { startBoss() }
     }
     let dx = Self.lanes[lane] - x
     x += dx * (1 - exp(-15 * dt))
@@ -565,7 +566,6 @@ final class Game {
             k.slamLanes = []
             k.warning = 0
             k.slam = 0
-            bonus += Self.treasureBonus
             onEvent("krakenDefeated")
           } else {
             onEvent(k.hp == Self.krakenRageHP ? "krakenRage" : "hit")

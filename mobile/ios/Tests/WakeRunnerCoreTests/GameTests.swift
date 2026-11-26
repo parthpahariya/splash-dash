@@ -342,15 +342,12 @@ final class GameTests: XCTestCase {
       XCTAssertEqual(g.lastSunkName, stats.name); XCTAssertEqual(g.piratesSunk, 1)
     }
   }
-  func testEncounterUnlocksAndOneCaptainAtATime() {
+  func testEveryPirateFromTheStartAndOneCaptainAtATime() {
     var roll = 0.0
     let g = Game(random: { roll }); g.reset()
-    for level in 1...5 {
-      g.level = level; g.distance = Double((level - 1) * 300)
-      var seen = Set<PirateType>()
-      for i in 0..<100 { roll = Double(i) / 100; seen.insert(g.choosePirate()) }
-      XCTAssertEqual(seen, Set(PirateType.allCases.filter { $0.stats.unlock <= level }))
-    }
+    var seen = Set<PirateType>()
+    for i in 0..<100 { roll = Double(i) / 100; seen.insert(g.choosePirate()) }
+    XCTAssertEqual(seen, Set(PirateType.allCases), "no unlock order")
     g.spawn(.pirate, lane: 0, y: 150, pirateType: .captain)
     roll = 0.999; XCTAssertNotEqual(g.choosePirate(), .captain)
   }
@@ -383,7 +380,7 @@ final class GameTests: XCTestCase {
   }
   private func atKraken() -> (Game, Kraken) {
     let g = game()
-    g.distance = Game.journeyLength - 0.01
+    g.bonus = Game.maxScore
     g.update(0.01)
     let k = g.kraken!
     k.y = Game.krakenY
@@ -404,25 +401,38 @@ final class GameTests: XCTestCase {
     skipped.skipIntro()
     XCTAssertEqual(skipped.status, .playing)
   }
-  func testJourneyEndsWithTheKraken() {
+  func testLevelsStopAtFiveAndDistanceAloneDoesNotWakeTheKraken() {
     let g = game()
-    g.distance = Game.journeyLength - 0.01
+    g.distance = 3000
+    g.update(0.05)
+    XCTAssertEqual(g.level, Game.maxLevel)
+    XCTAssertFalse(g.bossActive)
+    XCTAssertGreaterThan(g.distance, 3000)
+  }
+  func testKrakenRisesAtMaxScoreAndTheScoreStops() {
+    let g = game()
+    g.bonus = Game.maxScore - 3000
+    g.distance = 1499.99
+    g.update(0)
+    XCTAssertFalse(g.bossActive)
+    XCTAssertEqual(g.score, Game.maxScore - 1)
     var rose = false
     g.onEvent = { if $0 == "kraken" { rose = true } }
     g.update(0.05)
     XCTAssertTrue(rose)
     XCTAssertTrue(g.bossActive)
     XCTAssertNotNil(g.kraken)
-    XCTAssertEqual(g.distance, Game.journeyLength)
-    XCTAssertEqual(g.journeyProgress, 1)
-    XCTAssertEqual(g.level, 5)
+    XCTAssertEqual(g.score, Game.maxScore)
+    let distance = g.distance
     g.entities.removeAll()
+    g.bonus += 1500  // a sunk ship or heart can't push the score past the cap
     for _ in 0..<200 {
       g.invincible = 100
       g.update(0.05)
     }
     XCTAssertFalse(g.entities.contains { $0.kind == .pirate }, "no pirates during the fight")
-    XCTAssertEqual(g.distance, Game.journeyLength, "the journey stops at the island")
+    XCTAssertEqual(g.distance, distance, "the voyage stops during the fight")
+    XCTAssertEqual(g.score, Game.maxScore)
   }
   func testKrakenSlamsThePlayersLane() {
     let (g, k) = atKraken()
@@ -473,7 +483,8 @@ final class GameTests: XCTestCase {
     g.bullets.append(Bullet(x: 400, y: k.y, vx: 0, vy: 0, enemy: false))
     g.update(0)
     XCTAssertGreaterThan(k.dying, 0)
-    XCTAssertEqual(g.score, score + Game.treasureBonus)
+    XCTAssertEqual(g.score, score)
+    XCTAssertEqual(g.score, Game.maxScore)
     XCTAssertTrue(events.contains("krakenDefeated"))
     advance(g, 1.7)
     XCTAssertNil(g.kraken)

@@ -197,13 +197,10 @@ class GameTest {
             assertEquals(type.title, g.lastSunkName); assertEquals(1, g.piratesSunk)
         }
     }
-    @Test fun gradualUnlocksAndOneCaptainAtATime() {
+    @Test fun everyPirateFromTheStartAndOneCaptainAtATime() {
         var roll = 0.0; val g = Game({ roll }); g.reset()
-        for (level in 1..5) {
-            g.level = level; g.distance = (level-1)*300.0
-            val seen = (0..99).map { roll = it/100.0; g.choosePirate() }.toSet()
-            assertEquals(PirateType.values().filter { it.unlock <= level }.toSet(), seen)
-        }
+        val seen = (0..99).map { roll = it/100.0; g.choosePirate() }.toSet()
+        assertEquals("no unlock order", PirateType.values().toSet(), seen)
         g.spawn(Kind.PIRATE, 0, 150.0, PirateType.CAPTAIN); roll = .999
         assertNotEquals(PirateType.CAPTAIN, g.choosePirate())
     }
@@ -226,7 +223,7 @@ class GameTest {
         assertEquals(aim, shot.x+shot.vx*(Game.PLAYER_Y-shot.y)/shot.vy, .001)
     }
     private fun atKraken(): Pair<Game, Kraken> {
-        val g = game(); g.distance = Game.JOURNEY_LENGTH - .01; g.update(.01)
+        val g = game(); g.bonus = Game.MAX_SCORE; g.update(.01)
         val k = g.kraken!!; k.y = Game.KRAKEN_Y; k.attackTimer = 0.0
         return g to k
     }
@@ -236,16 +233,22 @@ class GameTest {
         repeat(80) { g.update(.05) }; assertEquals(Status.PLAYING, g.status)
         val skipped = Game({ .5 }); skipped.beginVoyage(); skipped.skipIntro(); assertEquals(Status.PLAYING, skipped.status)
     }
-    @Test fun journeyEndsWithTheKraken() {
-        val g = game(); g.distance = Game.JOURNEY_LENGTH - .01
+    @Test fun levelsStopAtFiveAndDistanceAloneDoesNotWakeTheKraken() {
+        val g = game(); g.distance = 3000.0; g.update(.05)
+        assertEquals(Game.MAX_LEVEL, g.level); assertFalse(g.bossActive); assertTrue(g.distance > 3000)
+    }
+    @Test fun krakenRisesAtMaxScoreAndTheScoreStops() {
+        val g = game(); g.bonus = Game.MAX_SCORE - 3000; g.distance = 1499.99
+        g.update(0.0); assertFalse(g.bossActive); assertEquals(Game.MAX_SCORE - 1, g.score)
         var rose = false; g.onEvent = { if (it == "kraken") rose = true }
         g.update(.05)
-        assertTrue(rose); assertTrue(g.bossActive); assertNotNull(g.kraken)
-        assertEquals(Game.JOURNEY_LENGTH, g.distance, 0.0); assertEquals(1.0, g.journeyProgress, 0.0); assertEquals(5, g.level)
-        g.entities.clear()
+        assertTrue(rose); assertTrue(g.bossActive); assertNotNull(g.kraken); assertEquals(Game.MAX_SCORE, g.score)
+        val distance = g.distance
+        g.entities.clear(); g.bonus += 1500 // a sunk ship or heart can't push the score past the cap
         repeat(200) { g.invincible = 100.0; g.update(.05) }
         assertTrue("no pirates during the fight", g.entities.none { it.kind == Kind.PIRATE })
-        assertEquals("the journey stops at the island", Game.JOURNEY_LENGTH, g.distance, 0.0)
+        assertEquals("the voyage stops during the fight", distance, g.distance, 0.0)
+        assertEquals(Game.MAX_SCORE, g.score)
     }
     @Test fun krakenSlamsThePlayersLane() {
         val (g, k) = atKraken(); g.update(.01)
@@ -273,7 +276,7 @@ class GameTest {
         val events = mutableListOf<String>(); g.onEvent = { events.add(it) }
         val score = g.score
         k.hp = 1; g.bullets.add(Bullet(400.0, k.y, 0.0, 0.0, false)); g.update(0.0)
-        assertTrue(k.dying > 0); assertEquals(score + Game.TREASURE_BONUS, g.score); assertTrue("krakenDefeated" in events)
+        assertTrue(k.dying > 0); assertEquals(score, g.score); assertEquals(Game.MAX_SCORE, g.score); assertTrue("krakenDefeated" in events)
         advance(g, 1.7); assertNull(g.kraken); assertTrue(g.outro > 0); assertTrue("treasure" in events)
         advance(g, 3.1); assertEquals(Status.WON, g.status); assertTrue("won" in events)
         assertFalse("no ad continue after winning", g.canRevive)

@@ -160,15 +160,13 @@ class HullBar(context: Context) : View(context) {
     }
 }
 
-/** Harbour-to-treasure progress with the boat as a marker, or the Kraken's health during the fight. */
+/** A rounded fill bar: the Kraken's health during the fight, and the intro's skip progress. */
 class JourneyTrack(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rect = RectF()
     var fraction = 0f
         set(value) { if (field != value) { field = value; invalidate() } }
     var tint = Clay.gold
-        set(value) { if (field != value) { field = value; invalidate() } }
-    var showBoat = true
         set(value) { if (field != value) { field = value; invalidate() } }
 
     override fun onDraw(c: Canvas) {
@@ -179,12 +177,6 @@ class JourneyTrack(context: Context) : View(context) {
         if (fraction > 0) {
             rect.set(pad, pad, pad + max(8 * d, (w - pad * 2) * fraction), h - pad)
             paint.color = tint; c.drawRoundRect(rect, rect.height() / 2, rect.height() / 2, paint)
-        }
-        if (showBoat) {
-            val r = h / 2; val cx = r + (w - h) * fraction
-            paint.color = Clay.cream; c.drawCircle(cx, h / 2, r, paint)
-            paint.style = Paint.Style.STROKE; paint.strokeWidth = 2 * d; paint.color = Clay.ink
-            c.drawCircle(cx, h / 2, r - d, paint)
         }
     }
 }

@@ -106,7 +106,7 @@ final class GameModel: ObservableObject {
     case "revive": notice = Notice("Second wind · \(Game.reviveHealth) hull", "heart.fill", .mint)
     case "kraken": notice = Notice("The Kraken rises! Fire at its head", "exclamationmark.triangle.fill", .danger)
     case "krakenRage": notice = Notice("The Kraken is enraged!", "exclamationmark.triangle.fill", .danger)
-    case "krakenDefeated": notice = Notice("The Kraken sinks · +\(Game.treasureBonus) points", "crown.fill", .gold)
+    case "krakenDefeated": notice = Notice("The Kraken sinks · the treasure is yours", "crown.fill", .gold)
     case "over":
       saveBest()
       frame &+= 1
@@ -349,7 +349,7 @@ struct GameScreen: View {
         } else if model.game.status == .playing {
           VStack(spacing: 0) {
             hud(landscape: landscape)
-            journeyBar.padding(.top, 8)
+            if let k = model.game.kraken { krakenBar(k).padding(.top, 8) }
             if let notice = model.notice {
               toast(notice)
                 .padding(.top, 14)
@@ -472,25 +472,18 @@ struct GameScreen: View {
     }
   }
 
-  /// Harbour-to-treasure progress; during the fight it becomes the Kraken's health bar.
-  private var journeyBar: some View {
-    let k = model.game.kraken
-    let fraction = k.map { Double(max(0, $0.hp)) / Double(Game.krakenHP) } ?? model.game.journeyProgress
-    let tint = k == nil ? Theme.gold : (k!.enraged ? Theme.danger : Theme.mint)
+  /// The Kraken's health bar, shown only during the fight.
+  private func krakenBar(_ k: Kraken) -> some View {
+    let fraction = Double(max(0, k.hp)) / Double(Game.krakenHP)
+    let tint = k.enraged ? Theme.danger : Theme.mint
     return HStack(spacing: 8) {
-      Image(systemName: k == nil ? "flag.fill" : "exclamationmark.triangle.fill")
-        .font(.caption.weight(.black)).foregroundStyle(k == nil ? Theme.creamMuted : Theme.danger)
-      if k != nil { Text("KRAKEN").font(.caption2.weight(.black)).tracking(1.2) }
+      Image(systemName: "exclamationmark.triangle.fill")
+        .font(.caption.weight(.black)).foregroundStyle(Theme.danger)
+      Text("KRAKEN").font(.caption2.weight(.black)).tracking(1.2)
       GeometryReader { g in
         ZStack(alignment: .leading) {
           Capsule().fill(Theme.ink.opacity(0.75))
           Capsule().fill(tint).frame(width: max(fraction > 0 ? 8 : 0, (g.size.width - 4) * fraction)).padding(2)
-          if k == nil {
-            // The player's boat travelling along the route.
-            Circle().fill(Theme.cream).overlay(Circle().strokeBorder(Theme.ink, lineWidth: 2))
-              .frame(width: 14, height: 14)
-              .offset(x: max(0, (g.size.width - 14) * fraction))
-          }
         }
       }
       .frame(height: 14)
@@ -499,9 +492,7 @@ struct GameScreen: View {
     .padding(.horizontal, 12).padding(.vertical, 6)
     .clay(top: Theme.surface, fill: Theme.deep, radius: 16)
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel(
-      k.map { "Kraken health \(max(0, $0.hp)) of \(Game.krakenHP)" }
-        ?? "Journey \(Int(model.game.journeyProgress * 100)) percent to the treasure")
+    .accessibilityLabel("Kraken health \(max(0, k.hp)) of \(Game.krakenHP)")
   }
 
   private var hullColor: Color {
@@ -611,12 +602,9 @@ struct GameScreen: View {
       ).ignoresSafeArea()
       ScrollView {
         VStack(spacing: 18) {
-          // The win screen opens straight on its title; the other menus keep a caption chip.
-          if status != .won {
-            Text(
-              status == .ready
-                ? "SAIL 1,500 M TO THE TREASURE" : status == .paused ? "TAKE A BREATHER" : "VOYAGE COMPLETE"
-            )
+          // The start and win screens open straight on their titles; pause and game over keep a caption chip.
+          if status == .paused || status == .over {
+            Text(status == .paused ? "TAKE A BREATHER" : "VOYAGE COMPLETE")
             .font(.caption.weight(.black)).tracking(1.6).foregroundStyle(Theme.gold)
             .padding(.horizontal, 12).padding(.vertical, 6)
             .background(Theme.ink.opacity(0.85), in: Capsule())
@@ -808,13 +796,13 @@ struct GameScreen: View {
       ("heart.fill", Theme.heart, "Hull",
        "Hearts repair 10 hull. Rocks cost 25 hull; cannonballs cost 15, or 25 for Sharpshooter shots. Ramming a ship costs 30."),
       ("flag.fill", Theme.gold, "Pirate fleet",
-       "Scout 1 hull · Gunner 2 · Burst Raider 3 · Scattershot 3 · Sharpshooter 2 · Captain 10. New types arrive as levels increase."),
+       "Scout 1 hull · Gunner 2 · Burst Raider 3 · Scattershot 3 · Sharpshooter 2 · Captain 10. Any of them can appear at any time."),
       ("exclamationmark.triangle.fill", Theme.danger, "Read the attack",
        "Dodge aimed shots and three-shot bursts, find gaps in spreads, and use long reloads to attack. A Sharpshooter marks its aim before firing; move after the lock. Captains alternate bursts and spreads and attack faster at half health."),
       ("shippingbox.fill", Theme.gold, "The treasure",
-       "Sail 1,500 m to the treasure island. The Kraken guards it: dodge its tentacle slams and sweeps, jump the rocks it hurls, and fire at its head. It rages at half health. Beat it to claim the treasure and 5,000 points."),
+       "Score 999,999 points and the Kraken rises to guard the treasure island. Your score stops there. Dodge its tentacle slams and sweeps, jump the rocks it hurls, and fire at its head. It rages at half health. Beat it to claim the treasure."),
       ("wind", Theme.mint, "Levels",
-       "Every 300 meters the water gets faster. Pause is at the top left; sound and help are in the pause menu."),
+       "Every 300 meters the water gets faster, up to level 5. Pause is at the top left; sound and help are in the pause menu."),
     ]
     return CompatNavigation {
       ScrollView {

@@ -5,13 +5,14 @@ import kotlin.math.*
 /** [INTRO] shows the treasure before a voyage; [WON] means the treasure was claimed. */
 enum class Status { READY, INTRO, PLAYING, PAUSED, OVER, WON }
 enum class Kind { ROCK, PIRATE, HEART }
-enum class PirateType(val title: String, val health: Int, val color: String, val unlock: Int, val reward: Int) {
-    SCOUT("Scout", 1, "#E9CF80", 1, 125),
-    GUNNER("Gunner", 2, "#B85C52", 1, 250),
-    BURST("Burst Raider", 3, "#B990D4", 2, 350),
-    SCATTER("Scattershot", 3, "#E69A53", 2, 350),
-    SNIPER("Sharpshooter", 2, "#DF6472", 3, 300),
-    CAPTAIN("Pirate Captain", 10, "#F3C75F", 4, 1500)
+/** Every type can appear from the start of a voyage; there is no unlock order. */
+enum class PirateType(val title: String, val health: Int, val color: String, val reward: Int) {
+    SCOUT("Scout", 1, "#E9CF80", 125),
+    GUNNER("Gunner", 2, "#B85C52", 250),
+    BURST("Burst Raider", 3, "#B990D4", 350),
+    SCATTER("Scattershot", 3, "#E69A53", 350),
+    SNIPER("Sharpshooter", 2, "#DF6472", 300),
+    CAPTAIN("Pirate Captain", 10, "#F3C75F", 1500)
 }
 class Entity(val id: Int, val kind: Kind, val lane: Int, var y: Double, var cooldown: Double, val pirateType: PirateType = PirateType.GUNNER) {
     val x get() = Game.LANES[lane]
@@ -31,7 +32,7 @@ class Bullet(var x: Double, var y: Double, val vx: Double, val vy: Double, val e
     var dead = false
 }
 
-/** The Leviathan that guards the treasure at the end of the journey. */
+/** The Leviathan that guards the treasure; it rises when the score reaches [Game.MAX_SCORE]. */
 class Kraken(var y: Double) {
     var hp = Game.KRAKEN_HP
     var hit = 0.0
@@ -57,16 +58,17 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
         const val PLAYER_Y = 665.0
         const val JUMP_DURATION = 1.15
         const val PIRATE_GAP = 220.0
-        /** Metres from the harbour to the treasure island, where the Kraken waits. */
-        const val JOURNEY_LENGTH = 1500.0
-        const val KRAKEN_HP = 40
+        /** The Kraken rises at this score, and the score never goes higher. */
+        const val MAX_SCORE = 999_999
+        /** The water stops getting faster at this level (every 300 m adds a level). */
+        const val MAX_LEVEL = 5
+        const val KRAKEN_HP = 500
         /** At or below this health the Kraken rages: two-lane slams and shorter warnings. */
-        const val KRAKEN_RAGE_HP = 20
+        const val KRAKEN_RAGE_HP = 250
         /** World y of the Kraken's head once it has surfaced at the top of the lanes. */
         const val KRAKEN_Y = 90.0
         const val SLAM_DAMAGE = 30
         const val SLAM_DURATION = .4
-        const val TREASURE_BONUS = 5000
         /** Seconds of the opening treasure scene before each voyage. */
         const val INTRO_DURATION = 3.5
         /** Share of the intro spent on the home shore before the fast-forward out to sea. */
@@ -120,14 +122,12 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
     var heartsCollected = 0
     /** Times this voyage was continued after an ad, up to [MAX_REVIVES]. */
     var revives = 0
-    /** The Kraken fight has begun; normal rocks and pirates stop. */
+    /** The Kraken fight has begun (the score reached [MAX_SCORE]); normal rocks and pirates stop. */
     var bossActive = false
     var kraken: Kraken? = null
     /** Seconds left in the opening scene ([Status.INTRO]) and the sail to the treasure. */
     var introTime = 0.0
     var outro = 0.0
-    /** 0 at the harbour, 1 at the treasure island. */
-    val journeyProgress get() = min(1.0, distance / JOURNEY_LENGTH)
     val canRevive get() = status == Status.OVER && revives < MAX_REVIVES
     val revivesLeft get() = max(0, MAX_REVIVES - revives)
     val entities = mutableListOf<Entity>()
@@ -137,7 +137,8 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
     private var pirateTimer = 5.0
     private var nextID = 0
     private var lastCaptainDistance = -900.0
-    val score get() = floor(distance * 2).toInt() + bonus
+    /** Capped at [MAX_SCORE], so it stops increasing once the Kraken rises. */
+    val score get() = min(MAX_SCORE.toLong(), floor(distance * 2).toLong() + bonus).toInt()
     val speed get() = 125.0 + min(145, (level - 1) * 17)
     val jumping get() = jumpTime > 0
     val jumpReady get() = !jumping && jumpCooldown <= 0
@@ -297,7 +298,7 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
     fun choosePirate(): PirateType {
         val pool = mutableListOf(PirateType.GUNNER, PirateType.GUNNER, PirateType.GUNNER, PirateType.GUNNER, PirateType.SCOUT, PirateType.SCOUT, PirateType.SCOUT)
         for (type in PirateType.values()) {
-            if (type.unlock > level || type == PirateType.GUNNER || type == PirateType.SCOUT) continue
+            if (type == PirateType.GUNNER || type == PirateType.SCOUT) continue
             if (type == PirateType.CAPTAIN && (distance - lastCaptainDistance < 900 || entities.any { !it.dead && it.kind == Kind.PIRATE && it.pirateType == PirateType.CAPTAIN })) continue
             pool.add(type)
             if (type != PirateType.CAPTAIN) pool.add(type)
@@ -360,10 +361,10 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
             return
         }
         if (!bossActive) {
-            distance = min(JOURNEY_LENGTH, distance + dt * speed * .12)
-            val nextLevel = 1 + floor(min(distance, JOURNEY_LENGTH - 1) / 300).toInt()
+            distance += dt * speed * .12
+            val nextLevel = min(MAX_LEVEL, 1 + floor(distance / 300).toInt())
             if (level != nextLevel) { level = nextLevel; onEvent("level") }
-            if (distance >= JOURNEY_LENGTH) startBoss()
+            if (score >= MAX_SCORE) startBoss()
         }
         val dx = LANES[lane] - x
         x += dx * (1 - exp(-15 * dt))
@@ -410,7 +411,7 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
                     b.dead = true; k.hp--; k.hit = .13
                     if (k.hp <= 0) {
                         k.dying = 1.6; k.warningLanes = emptyList(); k.slamLanes = emptyList(); k.warning = 0.0; k.slam = 0.0
-                        bonus += TREASURE_BONUS; onEvent("krakenDefeated")
+                        onEvent("krakenDefeated")
                     } else onEvent(if (k.hp == KRAKEN_RAGE_HP) "krakenRage" else "hit")
                     continue
                 }

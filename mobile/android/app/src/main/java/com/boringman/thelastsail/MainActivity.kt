@@ -91,7 +91,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
                 "revive" -> notice("Second wind · ${Game.REVIVE_HEALTH} hull", "heart", Clay.mint)
                 "kraken" -> notice("The Kraken rises! Fire at its head", "warning", Clay.danger)
                 "krakenRage" -> notice("The Kraken is enraged!", "warning", Clay.danger)
-                "krakenDefeated" -> notice("The Kraken sinks · +${Game.TREASURE_BONUS} points", "crown", Clay.gold)
+                "krakenDefeated" -> notice("The Kraken sinks · the treasure is yours", "crown", Clay.gold)
                 "over" -> if (::water.isInitialized) water.announceForAccessibility("Voyage complete. Score ${game.score}.")
                 "won" -> {
                     saveBest()
@@ -268,7 +268,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
      * fills as the intro plays, and a gold "Set sail!" banner as the boat heads out to sea.
      */
     private fun buildIntro(): FrameLayout {
-        skipProgress = JourneyTrack(this).apply { showBoat = false; tint = Clay.gold }
+        skipProgress = JourneyTrack(this).apply { tint = Clay.gold }
         val skip = column(4).apply {
             gravity = Gravity.CENTER
             addView(row(6).apply {
@@ -311,10 +311,10 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         sailBanner.scaleX = pop; sailBanner.scaleY = pop; sailBanner.alpha = min(1.0, t * 1.5).toFloat()
     }
 
-    /** Harbour-to-treasure progress; during the fight it becomes the Kraken's health bar. */
+    /** The Kraken's health bar, shown only during the fight. */
     private fun buildJourney(): LinearLayout {
-        journeyStart = icon("flag", Clay.creamMuted, 14)
-        journeyLabel = text(11f, weight = 900).apply { text = "KRAKEN"; letterSpacing = .11f; visibility = View.GONE }
+        journeyStart = icon("warning", Clay.danger, 14)
+        journeyLabel = text(11f, weight = 900).apply { text = "KRAKEN"; letterSpacing = .11f }
         journeyTrack = JourneyTrack(this)
         return row(8).apply {
             addView(journeyStart); addView(journeyLabel)
@@ -323,24 +323,16 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             background = clay(Clay.surface, Clay.deep, 16)
             setPadding(dp(12), dp(6), dp(12), dp(6) + depth)
             isFocusable = true
+            visibility = View.GONE
         }
     }
     private fun updateJourney() {
         val k = game.kraken
-        if (k == null) {
-            journeyTrack.fraction = game.journeyProgress.toFloat(); journeyTrack.tint = Clay.gold; journeyTrack.showBoat = true
-            journeyLabel.visibility = View.GONE
-            journey.contentDescription = "Journey ${(game.journeyProgress * 100).toInt()} percent to the treasure"
-        } else {
-            journeyTrack.fraction = max(0, k.hp).toFloat() / Game.KRAKEN_HP
-            journeyTrack.tint = if (k.enraged) Clay.danger else Clay.mint; journeyTrack.showBoat = false
-            journeyLabel.visibility = View.VISIBLE
-            journey.contentDescription = "Kraken health ${max(0, k.hp)} of ${Game.KRAKEN_HP}"
-        }
-        val start = if (k == null) "flag" else "warning"
-        if (journeyStart.tag != start) {
-            journeyStart.setImageDrawable(ControlIcon(start, if (k == null) Clay.creamMuted else Clay.danger)); journeyStart.tag = start
-        }
+        journey.visibility = if (k == null) View.GONE else View.VISIBLE
+        if (k == null) return
+        journeyTrack.fraction = max(0, k.hp).toFloat() / Game.KRAKEN_HP
+        journeyTrack.tint = if (k.enraged) Clay.danger else Clay.mint
+        journey.contentDescription = "Kraken health ${max(0, k.hp)} of ${Game.KRAKEN_HP}"
     }
 
     private fun buildHullCard(): LinearLayout {
@@ -430,12 +422,9 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             lp.gravity = Gravity.CENTER_HORIZONTAL
             menuCard.addView(view, lp)
         }
-        // The win screen opens straight on its title; the other menus keep a caption chip.
-        if (status != Status.WON) add(text(12f, Clay.gold, 900).apply {
-            text = when (status) {
-                Status.PAUSED -> "TAKE A BREATHER"; Status.OVER -> "VOYAGE COMPLETE"
-                else -> "SAIL 1,500 M TO THE TREASURE"
-            }
+        // The start and win screens open straight on their titles; pause and game over keep a caption chip.
+        if (status == Status.PAUSED || status == Status.OVER) add(text(12f, Clay.gold, 900).apply {
+            text = if (status == Status.PAUSED) "TAKE A BREATHER" else "VOYAGE COMPLETE"
             letterSpacing = .13f
             background = capsule(Clay.alpha(Clay.ink, .85f))
             setPadding(dp(12), dp(6), dp(12), dp(6))
@@ -732,10 +721,10 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             listOf("scope", Clay.gold, "Fire", "Hold Fire to shoot ahead. Tap a pirate to aim across lanes. Each hit removes one health pip; tougher ships earn more points."),
             listOf("arrow.up", Clay.gold, "Jump", "Swipe up any time to jump over rocks for 1.15 seconds. You can't change lanes in the air, and ships and cannonballs still hit you. Jumps never run out: after landing, you can jump again two seconds later."),
             listOf("heart", Clay.heart, "Hull", "Hearts repair 10 hull. Rocks cost 25 hull; cannonballs cost 15, or 25 for Sharpshooter shots. Ramming a ship costs 30."),
-            listOf("flag", Clay.gold, "Pirate fleet", "Scout 1 hull · Gunner 2 · Burst Raider 3 · Scattershot 3 · Sharpshooter 2 · Captain 10. New types arrive as levels increase."),
+            listOf("flag", Clay.gold, "Pirate fleet", "Scout 1 hull · Gunner 2 · Burst Raider 3 · Scattershot 3 · Sharpshooter 2 · Captain 10. Any of them can appear at any time."),
             listOf("warning", Clay.danger, "Read the attack", "Dodge aimed shots and three-shot bursts, find gaps in spreads, and use long reloads to attack. A Sharpshooter marks its aim before firing; move after the lock. Captains alternate bursts and spreads and attack faster at half health."),
-            listOf("chest", Clay.gold, "The treasure", "Sail 1,500 m to the treasure island. The Kraken guards it: dodge its tentacle slams and sweeps, jump the rocks it hurls, and fire at its head. It rages at half health. Beat it to claim the treasure and 5,000 points."),
-            listOf("wind", Clay.mint, "Levels", "Every 300 meters the water gets faster. Pause is at the top left; sound and help are in the pause menu."),
+            listOf("chest", Clay.gold, "The treasure", "Score 999,999 points and the Kraken rises to guard the treasure island. Your score stops there. Dodge its tentacle slams and sweeps, jump the rocks it hurls, and fire at its head. It rages at half health. Beat it to claim the treasure."),
+            listOf("wind", Clay.mint, "Levels", "Every 300 meters the water gets faster, up to level 5. Pause is at the top left; sound and help are in the pause menu."),
         )
         val dialog = Dialog(this, android.R.style.Theme_Material_NoActionBar)
         val list = column(14).apply { setPadding(dp(20), dp(8), dp(20), dp(20)) }
