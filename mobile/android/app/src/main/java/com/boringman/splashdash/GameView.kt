@@ -39,6 +39,8 @@ class GameView(context: Context, val game: Game) : View(context) {
         const val SEA_BOTTOM = "12687A"
         /** How far above the shoreline the ✗ sits on the home land. */
         const val MARK_DEPTH = 330.0
+        /** The boat moors just left of the jetty (x = 560) at the end of the voyage. */
+        const val DOCK_X = 500.0
         // Leviathan palette from the Kraken concept page (concept A).
         const val LEV_SKIN = "2F5C66"; const val LEV_DARK = "16323A"; const val LEV_LIGHT = "5F8F96"; const val LEV_BELLY = "8FB4B0"
         const val LEV_SUCKER = "C9DED8"; const val LEV_SPOT = "5FF3E6"; const val LEV_EYE = "FFB000"; const val LEV_RAGE = "FF5A3C"; const val LEV_PUPIL = "1A0D00"
@@ -107,8 +109,20 @@ class GameView(context: Context, val game: Game) : View(context) {
 
         // Journey's end: the treasure island (intro, sail-in and victory) and the Kraken guarding it.
         val scene = sceneLayout(visibleMinY, visibleMaxY)
-        scene.landBottom?.let { homeLand(c, visibleMinX - 60, visibleMinX + visibleWidth + 60, visibleMinY - 60, it, time) }
-        scene.islandY?.let { treasureIsland(c, 400.0, it, time) }
+        scene.landBottom?.let {
+            val layer = if (scene.landAlpha < 1) c.saveLayerAlpha(null, (255 * scene.landAlpha).toInt().coerceIn(0, 255)) else c.save()
+            homeLand(c, visibleMinX - 60, visibleMinX + visibleWidth + 60, visibleMinY - 60, it, game.elapsed)
+            c.restoreToCount(layer)
+        }
+        if (scene.pan > .02 && scene.pan < .98 && !reducedMotion) {
+            // Fast-forward streaks rushing past on the water.
+            val strength = sin(scene.pan * PI)
+            for (i in 0 until 16) {
+                val x = visibleMinX + (i * 211 % 997) / 997.0 * visibleWidth
+                val y = visibleMinY + (i * 173.0 + game.scroll * 1.6) % (visibleHeight + 160) - 80
+                line(c, x, y, x, y + 70 + (i % 3) * 30, "FFFFFF", 3f, .28 * strength)
+            }
+        }
         game.kraken?.let { krakenBody(c, it, time, visibleMaxY) }
 
         if (game.status == Status.READY) {
@@ -154,7 +168,8 @@ class GameView(context: Context, val game: Game) : View(context) {
         if (game.status != Status.OVER) {
             val boatX = scene.boatX ?: game.x
             val boatY = Game.PLAYER_Y + scene.boatOffset
-            if (!game.jumping) wake(c, boatX, boatY + 46, false, time)
+            // A moored boat (after winning) leaves no wake.
+            if (!game.jumping && game.status != Status.WON) wake(c, boatX, boatY + 46, false, time)
             // Shadow shrinks and fades as the boat leaves the water.
             oval(c, boatX + 6 + jump * 10, boatY + 8 + jump * 20, 32 * (1 - jump * .25), 50 * (1 - jump * .25), OUTLINE, .28 - jump * .12)
             c.save(); c.translate(boatX.toFloat(), (boatY - jump * 28).toFloat())
@@ -163,38 +178,48 @@ class GameView(context: Context, val game: Game) : View(context) {
             if (game.invincible == 0.0 || (game.elapsed * 12).toInt() % 2 == 0) boat(c, 0.0, 0.0, false)
             c.restore()
         }
-        if (game.status == Status.INTRO) {
-            val p = 1 - game.introTime / Game.INTRO_DURATION
-            if (p > Game.INTRO_LAND_SHARE + .15) caption(c, "Set sail!", 400.0, 300.0, 44f, min(1.0, (p - Game.INTRO_LAND_SHARE - .15) / .1))
-            caption(c, "Tap to skip", 400.0, visibleMaxY - 70, 15f, .7)
-        }
         c.restore()
     }
 
     // Journey's end
 
-    private class Scene(val landBottom: Double?, val islandY: Double?, val boatOffset: Double, val boatX: Double?)
+    private class Scene(val landBottom: Double?, val boatOffset: Double, val boatX: Double?,
+                        val pan: Double = 0.0, val landAlpha: Double = 1.0)
     /** Where the home land (intro), the treasure island (sail-in, victory) and the player's boat sit. */
     private fun sceneLayout(top: Double, bottom: Double): Scene = when {
         game.status == Status.INTRO -> {
-            // Land fills the screen down to a strip of ocean; then it slides up and away, fast.
+            // Land fills the screen down to a strip of ocean; then the view rushes up and out to sea.
             val p = 1 - game.introTime / Game.INTRO_DURATION
-            val q = if (p < Game.INTRO_LAND_SHARE) 0.0 else ((p - Game.INTRO_LAND_SHARE) / (1 - Game.INTRO_LAND_SHARE)).pow(1.6)
+            val s = if (p < Game.INTRO_LAND_SHARE) 0.0 else (p - Game.INTRO_LAND_SHARE) / (1 - Game.INTRO_LAND_SHARE)
+            // Ease in, rush, ease out: the pan starts gently, speeds through the middle and lands softly.
+            val pan = if (s < .5) 4 * s * s * s else 1 - (-2 * s + 2).pow(3) / 2
             val shore = bottom - (bottom - top) * .2
             // The boat waits below the screen and only glides in once the fast-forward starts.
             val hiddenOffset = bottom + 120 - Game.PLAYER_Y
-            Scene(shore - q * (bottom - top + 200), null, hiddenOffset * (1 - q), null)
+            // No camera motion with reduced motion: the land fades away and the boat is simply there.
+            if (reducedMotion) Scene(shore, if (s > 0) 0.0 else hiddenOffset, null, 0.0, 1 - min(1.0, s * 4))
+            else Scene(shore - pan * (bottom - top + 200), hiddenOffset * (1 - pan), null, s)
         }
-        game.status == Status.WON -> Scene(null, 280.0, -190.0, 400.0)
+        // Moored at the jetty of the same land the voyage started from.
+        game.status == Status.WON -> { val shore = homeShore(top, bottom); Scene(shore, dockY(shore) - Game.PLAYER_Y, DOCK_X) }
         game.outro > 0 -> {
+            // Journey's end: the home land slides into view and the boat sails up to its jetty.
             val t = (1 - game.outro / Game.OUTRO_DURATION).coerceIn(0.0, 1.0); val q = t * t * (3 - 2 * t)
-            Scene(null, -260 + q * 540, -q * 190, game.x + (400 - game.x) * q)
+            val shore = homeShore(top, bottom); val start = top - 160
+            val land = if (reducedMotion) shore else start + (shore - start) * q
+            val boatY = Game.PLAYER_Y + (dockY(shore) - Game.PLAYER_Y) * q
+            Scene(land, boatY - Game.PLAYER_Y, game.x + (DOCK_X - game.x) * q, 0.0, if (reducedMotion) q else 1.0)
         }
-        else -> Scene(null, null, 0.0, null)
+        else -> Scene(null, 0.0, null)
     }
 
-    /** A palm tree: ink-outlined trunk and fronds. */
+    /** Where the home shore rests at the end of the voyage, and where the boat moors beside the jetty. */
+    private fun homeShore(top: Double, bottom: Double) = top + (bottom - top) * .55
+    private fun dockY(shore: Double) = shore + 120
+
+    /** A palm tree with a hard drop shadow: ink-outlined trunk and fronds. */
     private fun palm(c: Canvas, x: Double, y: Double) {
+        oval(c, x + 12, y + 66, 34.0, 11.0, OUTLINE, .18)
         line(c, x - 16, y + 62, x, y, OUTLINE, 12f)
         line(c, x - 16, y + 62, x, y, "9A6E48", 7f)
         for (i in 0..5) {
@@ -204,70 +229,124 @@ class GameView(context: Context, val game: Game) : View(context) {
             line(c, x, y, ex, ey, "2E8A55", 10f)
         }
     }
+    /** A round bush with a shadow, ink rim and highlight. */
+    private fun bush(c: Canvas, x: Double, y: Double, r: Double) {
+        oval(c, x + 6, y + r * .7, r, r * .4, OUTLINE, .18)
+        oval(c, x, y, r, r * .8, "3F8A4F")
+        ring(c, x, y, r, r * .8, OUTLINE, 3f, .6)
+        oval(c, x - r * .3, y - r * .25, r * .4, r * .25, "6FC27A")
+    }
+    /** Fills the area between two wavy horizontal edges. */
+    private fun band(c: Canvas, left: Double, right: Double, top: (Double) -> Double, bottom: (Double) -> Double, hex: String) {
+        shape.reset(); shape.moveTo(left.toFloat(), top(left).toFloat())
+        var x = left; while (x <= right) { shape.lineTo(x.toFloat(), top(x).toFloat()); x += 10 }
+        x = right; while (x >= left) { shape.lineTo(x.toFloat(), bottom(x).toFloat()); x -= 10 }
+        shape.close()
+        paint.style = Paint.Style.FILL; paint.color = color(hex); c.drawPath(shape, paint)
+    }
+    /** Strokes a wavy horizontal edge. */
+    private fun edge(c: Canvas, left: Double, right: Double, y: (Double) -> Double, hex: String, width: Float, alpha: Double = 1.0) {
+        shape.reset(); shape.moveTo(left.toFloat(), y(left).toFloat())
+        var x = left; while (x <= right) { shape.lineTo(x.toFloat(), y(x).toFloat()); x += 10 }
+        paint.style = Paint.Style.STROKE; paint.strokeWidth = width; paint.strokeJoin = Paint.Join.ROUND
+        paint.color = color(hex, alpha); c.drawPath(shape, paint)
+    }
 
     /**
-     * The home shore at the start of a voyage: green land with an ✗ marking the treasure map,
-     * a sandy beach, and the ocean below.
+     * The home shore at the start of a voyage, drawn in the game's toy style: an outlined
+     * coastline, a jetty, a dotted treasure-map trail and the ✗ over buried treasure.
      */
     private fun homeLand(c: Canvas, left: Double, right: Double, top: Double, shore: Double, t: Double) {
         if (shore <= top) return
-        val wave = sin(t * 2) * 3
-        var x = left
-        while (x <= right) { oval(c, x, shore + 14 + wave, 46.0, 20.0, "FFFFFF", .45); oval(c, x, shore + 4, 44.0, 18.0, "7FD8CB"); x += 56 }
-        paint.style = Paint.Style.FILL; paint.color = color("F6DCA0")
-        c.drawRect(left.toFloat(), top.toFloat(), right.toFloat(), shore.toFloat(), paint)
-        x = left; while (x <= right) { oval(c, x, shore - 2, 40.0, 14.0, "F6DCA0"); x += 52 }
-        val grass = shore - 46
-        paint.style = Paint.Style.FILL; paint.color = color("5FB36A")
-        c.drawRect(left.toFloat(), top.toFloat(), right.toFloat(), max(top, grass).toFloat(), paint)
-        x = left; while (x <= right) { oval(c, x, grass, 36.0, 16.0, "5FB36A"); x += 48 }
-        for ((dx, dy, rx, ry) in listOf(listOf(120.0, 150.0, 90.0, 50.0), listOf(650.0, 120.0, 110.0, 60.0), listOf(260.0, 520.0, 120.0, 70.0),
-                listOf(560.0, 460.0, 90.0, 55.0), listOf(90.0, 700.0, 100.0, 60.0), listOf(700.0, 760.0, 120.0, 70.0))) {
-            oval(c, dx, grass - dy, rx, ry, "4C9A5A")
+        val motion = if (reducedMotion) 0.0 else t
+        val sandEdge = { x: Double -> shore + sin(x * .035) * 6 }
+        val grassEdge = { x: Double -> shore - 50 + sin(x * .028 + 1.3) * 9 }
+        val foam = { x: Double -> shore + 30 + sin(x * .05 + motion * 2) * 4 }
+        // Wet shallows and a foam line that laps at the beach.
+        band(c, left, right, sandEdge, foam, "7FD8CB")
+        edge(c, left, right, foam, "FFFFFF", 7f, .55)
+        // Sand, then grass, each with an ink outline like the game's islands and rocks.
+        band(c, left, right, { top }, sandEdge, "F6DCA0")
+        edge(c, left, right, sandEdge, OUTLINE, 3f, .5)
+        band(c, left, right, { top }, grassEdge, "5FB36A")
+        edge(c, left, right, grassEdge, OUTLINE, 3f, .4)
+        // A wooden jetty where the voyage begins.
+        val jx = 560.0
+        polygon(c, doubleArrayOf(jx - 22, shore - 18, jx + 22, shore - 18, jx + 22, shore + 96, jx - 22, shore + 96), "B07B4C", 3f)
+        var py = shore - 4; while (py <= shore + 86) { line(c, jx - 20, py, jx + 20, py, "8A5A34", 2f); py += 16 }
+        for ((px, qy) in listOf(jx - 22 to shore + 40, jx + 22 to shore + 40, jx - 22 to shore + 96, jx + 22 to shore + 96)) {
+            oval(c, px, qy, 6.0, 6.0, "6E4830"); ring(c, px, qy, 6.0, 6.0, OUTLINE, 2f)
         }
-        for ((px, py) in listOf(110.0 to 120.0, 700.0 to 150.0, 180.0 to 430.0, 640.0 to 560.0, 330.0 to 720.0, 90.0 to 860.0)) palm(c, px, grass - py)
-        // ✗ marks the spot.
-        val xY = shore - MARK_DEPTH
-        oval(c, 400.0, xY + 6, 60.0, 26.0, "8A6A3A", .3)
-        for ((dx, dy) in listOf(1.0 to 1.0, 1.0 to -1.0)) {
-            line(c, 400 - 36 * dx, xY - 36 * dy, 400 + 36 * dx, xY + 36 * dy, OUTLINE, 20f)
-            line(c, 400 - 36 * dx, xY - 36 * dy, 400 + 36 * dx, xY + 36 * dy, "D9483B", 12f)
+        // Grass detail: darker meadows, tufts and a few flowers.
+        for ((dx, dy, rx, ry) in listOf(listOf(120.0, 170.0, 90.0, 46.0), listOf(650.0, 140.0, 110.0, 54.0), listOf(260.0, 560.0, 120.0, 64.0),
+                listOf(600.0, 480.0, 90.0, 50.0), listOf(90.0, 740.0, 100.0, 56.0), listOf(700.0, 800.0, 120.0, 64.0))) {
+            oval(c, dx, shore - dy, rx, ry, "4C9A5A")
         }
+        for (i in 0 until 46) {
+            val tx = left + (i * 157 % 941) / 941.0 * (right - left)
+            val ty = shore - 70 - (i * 89 % 997) / 997.0 * 900
+            line(c, tx - 4, ty, tx - 6, ty - 9, "3E8A4C", 2.5f)
+            line(c, tx, ty, tx, ty - 11, "3E8A4C", 2.5f)
+            line(c, tx + 4, ty, tx + 6, ty - 9, "3E8A4C", 2.5f)
+            if (i % 5 == 0) oval(c, tx + 10, ty - 6, 3.5, 3.5, if (i % 10 == 0) "FFF6E0" else "FFC94D")
+        }
+        for ((bx, by, r) in listOf(Triple(230.0, 250.0, 26.0), Triple(660.0, 330.0, 30.0), Triple(110.0, 470.0, 24.0), Triple(520.0, 650.0, 28.0))) bush(c, bx, shore - by, r)
+        for ((px, qy) in listOf(110.0 to 130.0, 700.0 to 170.0, 180.0 to 430.0, 650.0 to 580.0, 330.0 to 760.0, 90.0 to 900.0)) palm(c, px, shore - qy)
+        // A dotted treasure-map trail from the jetty up to the ✗.
+        val mx = 400.0; val my = shore - MARK_DEPTH
+        for (i in 0..16) {
+            val u = i / 16.0; val v = 1 - u
+            val px = v * v * jx + 2 * v * u * 560 + u * u * (mx + 50)
+            val qy = v * v * (shore - 30) + 2 * v * u * (my + 40) + u * u * (my + 34)
+            oval(c, px, qy, 4.5, 4.5, "D9483B", .85)
+        }
+        buriedTreasure(c, mx, my, t)
     }
 
-    /** A sandy island with a palm and an open, glowing treasure chest. */
-    private fun treasureIsland(c: Canvas, x: Double, y: Double, t: Double) {
-        val swell = sin(t * 1.6) * 3; val pulse = (sin(t * 4) + 1) / 2
-        oval(c, x, y, 160 + swell, 118 + swell, "FFFFFF", .35)
-        oval(c, x, y, 150.0, 108.0, "7FD8CB")
-        oval(c, x, y, 134.0, 94.0, "F6DCA0")
-        ring(c, x, y, 134.0, 94.0, OUTLINE, 3f, .5)
-        oval(c, x - 70, y + 10, 46.0, 34.0, "5FB36A")
-        // Palm
-        line(c, x - 70, y + 12, x - 54, y - 50, OUTLINE, 12f)
-        line(c, x - 70, y + 12, x - 54, y - 50, "9A6E48", 7f)
-        for (i in 0..5) {
-            val a = i * PI / 3 + .2
-            val ex = x - 54 + cos(a) * 44; val ey = y - 50 + sin(a) * 28
-            line(c, x - 54, y - 50, ex, ey, OUTLINE, 15f, .85)
-            line(c, x - 54, y - 50, ex, ey, "2E8A55", 10f)
+    /**
+     * ✗ marks the spot: two pieces of sun-bleached driftwood crossed on a sand mound in a sandy
+     * clearing, with the corner of a buried chest peeking out. No gold on show: it stays buried.
+     */
+    private fun buriedTreasure(c: Canvas, x: Double, y: Double, t: Double) {
+        // The ✗ pops in with a small overshoot as the scene appears.
+        val p = 1 - game.introTime / Game.INTRO_DURATION
+        val pop = if (game.status != Status.INTRO || reducedMotion) 1.0 else Clay.easeOutBack(min(1.0, p / .12))
+        // Sandy clearing with ripples.
+        oval(c, x + 4, y + 8, 124.0, 80.0, OUTLINE, .12)
+        oval(c, x, y, 120.0, 78.0, "F6DCA0")
+        ring(c, x, y, 120.0, 78.0, OUTLINE, 3f, .5)
+        for ((dx, dy) in listOf(-92.0 to -36.0, 60.0 to -54.0, -84.0 to 42.0, 70.0 to 48.0)) {
+            shape.reset(); shape.moveTo((x + dx).toFloat(), (y + dy).toFloat())
+            shape.quadTo((x + dx + 12).toFloat(), (y + dy - 8).toFloat(), (x + dx + 24).toFloat(), (y + dy).toFloat())
+            paint.style = Paint.Style.STROKE; paint.strokeWidth = 3f; paint.strokeCap = Paint.Cap.ROUND; paint.color = color("E5C384")
+            c.drawPath(shape, paint)
         }
-        // Chest with a golden glow and sparkles
-        val cx = x + 34; val cy = y + 4
-        oval(c, cx, cy, 64 + pulse * 8, 50 + pulse * 6, "FFD34D", .22 + pulse * .12)
-        polygon(c, doubleArrayOf(cx - 34, cy - 30, cx + 34, cy - 30, cx + 30, cy - 52, cx - 30, cy - 52), "A86E42", 3f)
-        for ((dx, dy) in listOf(-16.0 to -12.0, 0.0 to -16.0, 14.0 to -11.0, -6.0 to -6.0, 8.0 to -4.0)) oval(c, cx + dx, cy + dy, 8.0, 6.0, "FFD34D")
-        oval(c, cx + 2, cy - 18, 5.0, 5.0, "E0475B")
-        polygon(c, doubleArrayOf(cx - 34, cy - 8, cx + 34, cy - 8, cx + 34, cy + 26, cx - 34, cy + 26), "8A5A34", 3f)
-        line(c, cx - 34, cy + 2, cx + 34, cy + 2, "F3C75F", 4f)
-        line(c, cx - 34, cy + 18, cx + 34, cy + 18, "F3C75F", 4f)
-        polygon(c, doubleArrayOf(cx - 6, cy - 4, cx + 6, cy - 4, cx + 6, cy + 10, cx - 6, cy + 10), "F3C75F", 2f)
-        for (i in 0 until 4) {
-            val a = t * .9 + i * PI / 2; val r = 58.0
-            val sx = cx + cos(a) * r; val sy = cy - 10 + sin(a) * r * .6; val s = 4 + pulse * 4
-            line(c, sx - s, sy, sx + s, sy, "FFF6E0", 2.5f, .6 + pulse * .4)
-            line(c, sx, sy - s, sx, sy + s, "FFF6E0", 2.5f, .6 + pulse * .4)
+        // The sand mound and the buried chest's corner.
+        oval(c, x + 5, y + 10, 76.0, 46.0, OUTLINE, .18)
+        oval(c, x, y, 72.0, 44.0, "E9C98A")
+        ring(c, x, y, 72.0, 44.0, OUTLINE, 3f)
+        oval(c, x - 12, y - 12, 40.0, 18.0, "F7E2B0")
+        polygon(c, doubleArrayOf(x + 20, y + 14, x + 56, y + 6, x + 60, y + 32, x + 24, y + 38), "8A5A34", 3f)
+        line(c, x + 22, y + 24, x + 58, y + 16, "F3C75F", 4f)
+        // Two driftwood branches crossed into the ✗.
+        c.save(); c.translate(x.toFloat(), y.toFloat()); c.scale(pop.toFloat(), pop.toFloat())
+        fun branch(pts: DoubleArray, wood: String) {
+            shape.reset(); shape.moveTo(pts[0].toFloat(), pts[1].toFloat())
+            shape.cubicTo(pts[2].toFloat(), pts[3].toFloat(), pts[4].toFloat(), pts[5].toFloat(), pts[6].toFloat(), pts[7].toFloat())
+            shape.cubicTo(pts[8].toFloat(), pts[9].toFloat(), pts[10].toFloat(), pts[11].toFloat(), pts[12].toFloat(), pts[13].toFloat())
+            paint.style = Paint.Style.STROKE; paint.strokeCap = Paint.Cap.ROUND
+            paint.strokeWidth = 18f; paint.color = color(OUTLINE); c.drawPath(shape, paint)
+            paint.strokeWidth = 11f; paint.color = color(wood); c.drawPath(shape, paint)
         }
+        branch(doubleArrayOf(-56.0, -26.0, -36.0, -22.0, -16.0, -8.0, 0.0, 4.0, 16.0, 16.0, 34.0, 26.0, 50.0, 30.0), "B8A48A")
+        branch(doubleArrayOf(54.0, -28.0, 36.0, -20.0, 18.0, -8.0, 2.0, 6.0, -14.0, 20.0, -30.0, 30.0, -46.0, 36.0), "CDBA9E")
+        for ((a, b) in listOf(doubleArrayOf(30.0, -14.0) to doubleArrayOf(40.0, -26.0), doubleArrayOf(-30.0, 14.0) to doubleArrayOf(-36.0, 26.0))) {
+            line(c, a[0], a[1], b[0], b[1], OUTLINE, 6f)
+            line(c, a[0], a[1], b[0], b[1], "CDBA9E", 3f)
+        }
+        oval(c, -30.0, -12.0, 2.5, 2.5, "7E6B55")
+        oval(c, 20.0, 10.0, 2.5, 2.5, "7E6B55")
+        c.restore()
     }
 
     /** A tapering arm along [pts], with a pale underside and suckers. */
@@ -371,15 +450,6 @@ class GameView(context: Context, val game: Game) : View(context) {
             tentacle(c, pts, 40.0, 1.0)
             oval(c, lx, end, 44.0, 16.0, "FFFFFF", .7)
         }
-    }
-
-    /** Large caption text centred on [x] with a soft shadow, used by the intro scene. */
-    private fun caption(c: Canvas, text: String, x: Double, y: Double, size: Float, alpha: Double) {
-        paint.style = Paint.Style.FILL; paint.color = color("FFF6E0", alpha)
-        paint.textSize = size; paint.textAlign = Paint.Align.CENTER; paint.typeface = Clay.font(900)
-        paint.setShadowLayer(4f, 0f, 3f, color(OUTLINE, .8 * alpha))
-        c.drawText(text, x.toFloat(), (y - paint.ascent()).toFloat(), paint)
-        paint.clearShadowLayer()
     }
 
     // Primitives

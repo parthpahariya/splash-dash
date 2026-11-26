@@ -8,6 +8,7 @@ import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import android.graphics.Color
 import android.graphics.Rect
+import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioManager
@@ -68,6 +69,13 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
     private lateinit var journeyLabel: TextView
     private lateinit var journeyTrack: JourneyTrack
     private lateinit var introSkip: View
+    private lateinit var introUi: FrameLayout
+    /** The treasure sequence plays once when a voyage is won, then gives way to the score screen. */
+    private lateinit var treasureLayer: FrameLayout
+    private lateinit var treasureContent: LinearLayout
+    private var showingTreasure = false
+    private lateinit var skipProgress: JourneyTrack
+    private lateinit var sailBanner: LinearLayout
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -202,14 +210,24 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
 
         menu = buildMenu(landscape)
         root.addView(menu, FrameLayout.LayoutParams(-1, -1))
-        // During the opening scene the whole screen skips it; TalkBack users can skip it too.
+        // During the intro the whole scene can be tapped to skip; the Skip button is the labelled control.
         introSkip = View(this).apply {
-            isClickable = true; isFocusable = true; asButton(this)
-            contentDescription = "Skip intro and set sail"
+            isClickable = true
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             setOnClickListener { game.skipIntro(); updateHUD() }
             visibility = View.GONE
         }
         root.addView(introSkip, FrameLayout.LayoutParams(-1, -1))
+        treasureContent = column().apply { gravity = Gravity.CENTER_HORIZONTAL }
+        treasureLayer = FrameLayout(this).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Clay.deep, Color.parseColor("#123A47"), Clay.deep))
+            isClickable = true
+            addView(treasureContent, FrameLayout.LayoutParams(min(dp(460), resources.displayMetrics.widthPixels), -1, Gravity.CENTER_HORIZONTAL))
+            visibility = View.GONE
+        }
+        root.addView(treasureLayer, FrameLayout.LayoutParams(-1, -1))
+        introUi = buildIntro()
+        root.addView(introUi, FrameLayout.LayoutParams(-1, -1))
 
         root.setOnApplyWindowInsetsListener { _, insets ->
             val bars = if (Build.VERSION.SDK_INT >= 30) {
@@ -222,6 +240,8 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             val side = dp(if (landscape) 24 else 16)
             hud.setPadding(bars.left + side, bars.top + dp(8), bars.right + side, bars.bottom + dp(12))
             menu.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            introUi.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            treasureLayer.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             val big = resources.configuration.fontScale >= 1.3f
             water.contentInsets = Rect(
                 bars.left, bars.top + dp(if (big) 112 else 100),
@@ -242,6 +262,54 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_FULLSCREEN
         }
         root.requestApplyInsets(); lastStatus = null; lastHullIcon = ""; noticeUntil = 0; updateHUD()
+    }
+
+    /**
+     * Intro UI: the scene itself can be tapped to skip, plus a labelled clay Skip button that
+     * fills as the intro plays, and a gold "Set sail!" banner as the boat heads out to sea.
+     */
+    private fun buildIntro(): FrameLayout {
+        skipProgress = JourneyTrack(this).apply { showBoat = false; tint = Clay.gold }
+        val skip = column(4).apply {
+            gravity = Gravity.CENTER
+            addView(row(6).apply {
+                addView(text(15f, weight = 800).apply { text = "Skip" })
+                addView(icon("forward", Clay.cream, 13))
+            }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL })
+            // Progress through the intro, so players know how long is left.
+            addView(skipProgress, LinearLayout.LayoutParams(dp(54), dp(6)).apply { gravity = Gravity.CENTER_HORIZONTAL })
+            background = clay(radius = 22)
+            minimumHeight = dp(48) + depth
+            setPadding(dp(18), dp(6), dp(18), dp(6) + depth)
+            isClickable = true; isFocusable = true; asButton(this)
+            contentDescription = "Skip intro and set sail"
+            setOnClickListener { game.skipIntro(); updateHUD() }
+        }
+        sailBanner = row(10).apply {
+            gravity = Gravity.CENTER
+            addView(icon("sailboat", Clay.ink, 26))
+            addView(text(28f, Clay.ink, 900).apply { text = "Set sail!" })
+            background = clay(Clay.goldTop, Clay.gold, 24)
+            setPadding(dp(26), dp(14), dp(26), dp(14) + depth)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+            translationY = -dpf(90f)
+            visibility = View.INVISIBLE
+        }
+        return FrameLayout(this).apply {
+            addView(sailBanner, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
+            addView(skip, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply { setMargins(dp(16), dp(8), dp(16), 0) })
+            visibility = View.GONE
+        }
+    }
+    private fun updateIntro() {
+        val p = (1 - game.introTime / Game.INTRO_DURATION).coerceIn(0.0, 1.0)
+        skipProgress.fraction = p.toFloat()
+        // The banner pops in once the land has mostly scrolled away, so it never covers the ✗.
+        val t = ((p - Game.INTRO_LAND_SHARE - .3) / .12).coerceIn(0.0, 1.0)
+        if (t <= 0) { sailBanner.visibility = View.INVISIBLE; return }
+        val pop = (if (reducedMotion) 1.0 else Clay.easeOutBack(t)).toFloat()
+        sailBanner.visibility = View.VISIBLE
+        sailBanner.scaleX = pop; sailBanner.scaleY = pop; sailBanner.alpha = min(1.0, t * 1.5).toFloat()
     }
 
     /** Harbour-to-treasure progress; during the fight it becomes the Kraken's health bar. */
@@ -363,9 +431,10 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             lp.gravity = Gravity.CENTER_HORIZONTAL
             menuCard.addView(view, lp)
         }
-        add(text(12f, Clay.gold, 900).apply {
+        // The win screen opens straight on its title; the other menus keep a caption chip.
+        if (status != Status.WON) add(text(12f, Clay.gold, 900).apply {
             text = when (status) {
-                Status.PAUSED -> "TAKE A BREATHER"; Status.OVER -> "VOYAGE COMPLETE"; Status.WON -> "THE KRAKEN IS DEFEATED"
+                Status.PAUSED -> "TAKE A BREATHER"; Status.OVER -> "VOYAGE COMPLETE"
                 else -> "SAIL 1,500 M TO THE TREASURE"
             }
             letterSpacing = .13f
@@ -373,7 +442,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             setPadding(dp(12), dp(6), dp(12), dp(6))
         })
         add(text(if (accessibleText) 34f else 42f, weight = 900).apply {
-            text = when (status) { Status.PAUSED -> "PAUSED"; Status.OVER -> "WHAT A\nVOYAGE!"; Status.WON -> "TREASURE\nFOUND!"; else -> "WAKE\nRUNNER" }
+            text = when (status) { Status.PAUSED -> "PAUSED"; Status.OVER -> "WHAT A\nVOYAGE!"; Status.WON -> "VOYAGE\nCOMPLETE!"; else -> "WAKE\nRUNNER" }
             gravity = Gravity.CENTER
             setLineSpacing(0f, .92f)
             setShadowLayer(.01f, 0f, dpf(4f), Clay.ink)
@@ -454,6 +523,107 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         }
     }
 
+    // Treasure sequence: Treasure Found (tap the chest), the chest opens, the letter.
+    // Skip on every step goes straight to the score. Matches TreasureSequence on iOS.
+
+    private fun finishTreasure() {
+        showingTreasure = false
+        treasureLayer.visibility = View.GONE
+        reveal(menu, true, false, .96f)
+    }
+
+    private fun renderTreasure(step: Int) {
+        val c = treasureContent
+        c.removeAllViews()
+        c.setPadding(dp(20), dp(8), dp(20), dp(16))
+        fun spacer() = c.addView(Space(this), LinearLayout.LayoutParams(1, 0, 1f))
+        fun title(textValue: String, size: Float) = text(size, weight = 900).apply {
+            text = textValue; gravity = Gravity.CENTER; setLineSpacing(0f, .92f)
+            setShadowLayer(.01f, 0f, dpf(4f), Clay.ink)
+            if (Build.VERSION.SDK_INT >= 28) isAccessibilityHeading = true
+        }
+        fun centered(v: View, w: Int = -2, h: Int = -2, top: Int = 0) =
+            c.addView(v, LinearLayout.LayoutParams(w, h).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = dp(top) })
+        val skip = row().apply {
+            gravity = Gravity.CENTER
+            addView(text(15f, weight = 800).apply { text = "Skip" })
+            background = clay(radius = 22)
+            minimumHeight = dp(44) + depth
+            setPadding(dp(18), dp(6), dp(18), dp(6) + depth)
+            isClickable = true; isFocusable = true; asButton(this)
+            contentDescription = "Skip to score"
+            setOnClickListener { finishTreasure() }
+        }
+        c.addView(skip, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.END })
+        when (step) {
+            0 -> {
+                centered(text(12f, Clay.gold, 900).apply {
+                    text = "THE ISLAND'S SECRET"; letterSpacing = .13f
+                    background = capsule(Clay.alpha(Clay.ink, .85f)); setPadding(dp(12), dp(6), dp(12), dp(6))
+                }, top = 12)
+                centered(title("TREASURE\nFOUND!", if (accessibleText) 34f else 46f), top = 14)
+                spacer()
+                val chest = TreasureRevealView(this, reducedMotion, TreasureRevealView.Mode.CLOSED).apply {
+                    isClickable = true; isFocusable = true; asButton(this)
+                    contentDescription = "Open the chest"
+                    setOnClickListener { renderTreasure(1) }
+                }
+                centered(chest, -1, dp(210))
+                centered(text(15f, Clay.ink, 800).apply {
+                    text = "Tap the chest to open it"
+                    background = GradientDrawable().apply { setColor(Clay.cream); cornerRadius = dpf(999f); setStroke(dp(2), Clay.ink) }
+                    setPadding(dp(14), dp(8), dp(14), dp(8))
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                }, top = 10)
+                spacer()
+            }
+            1 -> {
+                centered(title("A ship in a bottle!", if (accessibleText) 26f else 30f), top = 12)
+                spacer()
+                centered(TreasureRevealView(this, reducedMotion, TreasureRevealView.Mode.OPENING), -1, dp(230))
+                centered(text(15f, Clay.creamMuted, 700).apply { text = "…and a sealed letter tucked beside it."; gravity = Gravity.CENTER }, top = 8)
+                spacer()
+                c.addView(clayButton("Read the letter", "envelope", primary = true, radius = 22, size = 20f, minHeight = 60) { renderTreasure(2) },
+                    LinearLayout.LayoutParams(-1, -2))
+            }
+            else -> {
+                spacer()
+                centered(TreasureRevealView(this, reducedMotion, TreasureRevealView.Mode.BOTTLE).apply {
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                }, -1, dp(90))
+                val note = column(10).apply {
+                    addView(TextView(this@MainActivity).apply {
+                        text = "“Dunk this ship in water.”"; setTextColor(Clay.ink)
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 23f); typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD_ITALIC)
+                    })
+                    addView(TextView(this@MainActivity).apply {
+                        text = "— Barbosa"; setTextColor(Clay.ink); gravity = Gravity.END
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f); typeface = Typeface.create(Typeface.SERIF, Typeface.ITALIC)
+                    }, LinearLayout.LayoutParams(-1, -2))
+                    background = GradientDrawable().apply { setColor(Color.parseColor("#F6E7C1")); cornerRadius = dpf(16f); setStroke(dp(3), Clay.ink) }
+                    setPadding(dp(20), dp(22), dp(20), dp(22))
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+                    contentDescription = "The letter reads: Dunk this ship in water. Signed, Barbosa."
+                }
+                val seal = View(this).apply {
+                    background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#D9483B")); setStroke(dp(2), Clay.ink) }
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                }
+                val letter = FrameLayout(this).apply {
+                    clipChildren = false
+                    addView(note, FrameLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+                    addView(seal, FrameLayout.LayoutParams(dp(30), dp(30), Gravity.TOP or Gravity.END).apply { rightMargin = -dp(4) })
+                }
+                c.clipChildren = false
+                centered(letter, -1, -2, top = 18)
+                spacer()
+                c.addView(clayButton("Keep the bottle", "check", primary = true, radius = 22, size = 20f, minHeight = 60) { finishTreasure() },
+                    LinearLayout.LayoutParams(-1, -2))
+            }
+        }
+        if (!reducedMotion) { c.alpha = 0f; c.animate().alpha(1f).setDuration(250).start() }
+    }
+
     private fun stat(symbol: String, value: String, label: String) = column(2).apply {
         gravity = Gravity.CENTER_HORIZONTAL
         addView(icon(symbol, Clay.mint, 16), LinearLayout.LayoutParams(dp(16), dp(16)).apply { gravity = Gravity.CENTER_HORIZONTAL })
@@ -515,9 +685,15 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             }
             updateBackHandling(playing)
             reveal(hud, playing, first, 1f)
-            reveal(menu, !playing && !intro, first, .96f)
+            // Plays when a voyage is won; a rotation mid-sequence (which rebuilds the screen) restarts it.
+            if (game.status == Status.WON && (!first || showingTreasure)) { showingTreasure = true; renderTreasure(0) }
+            if (game.status != Status.WON) { showingTreasure = false; treasureLayer.visibility = View.GONE }
+            treasureLayer.visibility = if (showingTreasure) View.VISIBLE else View.GONE
+            reveal(menu, !playing && !intro && !showingTreasure, first, .96f)
             introSkip.visibility = if (intro) View.VISIBLE else View.GONE
-            if (intro) introSkip.announceForAccessibility("Setting sail")
+            introUi.visibility = if (intro) View.VISIBLE else View.GONE
+            if (intro) updateIntro()
+            if (intro) introUi.announceForAccessibility("Setting sail")
             if (game.status == Status.OVER || game.status == Status.PAUSED || game.status == Status.WON) menu.announceForAccessibility(
                 when (game.status) { Status.PAUSED -> "Paused"; Status.WON -> "Treasure found!"; else -> "What a voyage!" })
             lastStatus = game.status
@@ -663,6 +839,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         val dt = if (previousFrame == 0L) 0.0 else (frameTimeNanos - previousFrame) / 1e9
         previousFrame = frameTimeNanos; game.update(dt)
         if (game.status == Status.PLAYING || game.status == Status.INTRO) water.invalidate()
+        if (game.status == Status.INTRO) updateIntro()
         if ((game.status == Status.PLAYING && frameTimeNanos - lastHUD > 100_000_000) || lastStatus != game.status || (noticeUntil != 0L && System.currentTimeMillis() > noticeUntil)) {
             updateHUD(); lastHUD = frameTimeNanos
         }

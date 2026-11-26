@@ -39,6 +39,12 @@ object Clay {
         else Typeface.create(Typeface.SANS_SERIF, if (weight >= 600) Typeface.BOLD else Typeface.NORMAL)
     }
 
+    /** Overshoots slightly past 1 and settles: used for pops (the ✗, "Set sail!"). */
+    fun easeOutBack(v: Double): Double {
+        val t = v.coerceIn(0.0, 1.0); val c1 = 1.70158; val c3 = c1 + 1
+        return 1 + c3 * (t - 1) * (t - 1) * (t - 1) + c1 * (t - 1) * (t - 1)
+    }
+
     /** Scores always show at least six digits (000637) so the HUD keeps a steady width. */
     fun digits(score: Int) = "%06d".format(max(0, score))
 }

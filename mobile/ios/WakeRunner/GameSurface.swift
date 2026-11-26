@@ -132,9 +132,20 @@ final class WaterView: UIView {
     // Journey's end: the treasure island (intro, sail-in and victory) and the Kraken guarding it.
     let scene = sceneLayout(visibleMinY, visibleMaxY)
     if let landBottom = scene.landBottom {
-      homeLand(c, visibleMinX - 60, visibleMinX + visibleWidth + 60, visibleMinY - 60, landBottom, time)
+      c.saveGState()
+      if scene.landAlpha < 1 { c.setAlpha(CGFloat(scene.landAlpha)) }
+      homeLand(c, visibleMinX - 60, visibleMinX + visibleWidth + 60, visibleMinY - 60, landBottom, game.elapsed)
+      c.restoreGState()
     }
-    if let islandY = scene.islandY { treasureIsland(c, 400, islandY, time) }
+    if scene.pan > 0.02 && scene.pan < 0.98 && !reducedMotion {
+      // Fast-forward streaks rushing past on the water.
+      let strength = sin(scene.pan * .pi)
+      for i in 0..<16 {
+        let x = visibleMinX + Double(i * 211 % 997) / 997 * visibleWidth
+        let y = visibleMinY + (Double(i * 173) + game.scroll * 1.6).truncatingRemainder(dividingBy: visibleHeight + 160) - 80
+        line(c, x, y, x, y + 70 + Double(i % 3) * 30, "FFFFFF", 3, alpha: 0.28 * strength)
+      }
+    }
     if let k = game.kraken { krakenBody(c, k, time, visibleMaxY) }
 
     if game.status == .ready {
@@ -182,7 +193,8 @@ final class WaterView: UIView {
     if game.status != .over {
       let boatX = scene.boatX ?? game.x
       let boatY = Game.playerY + scene.boatOffset
-      if !game.jumping { wake(c, boatX, boatY + 46, flip: false, time) }
+      // A moored boat (after winning) leaves no wake.
+      if !game.jumping && game.status != .won { wake(c, boatX, boatY + 46, flip: false, time) }
       // Shadow shrinks and fades as the boat leaves the water.
       oval(
         c, boatX + 6 + jump * 10, boatY + 8 + jump * 20, 32 * (1 - jump * 0.25),
@@ -193,13 +205,6 @@ final class WaterView: UIView {
       c.scaleBy(x: 1 + jump * 0.16, y: 1 + jump * 0.16)
       if game.invincible == 0 || Int(game.elapsed * 12) % 2 == 0 { boat(c, 0, 0, pirate: false) }
       c.restoreGState()
-    }
-    if game.status == .intro {
-      let p = 1 - game.introTime / Game.introDuration
-      if p > Game.introLandShare + 0.15 {
-        caption("Set sail!", 400, 300, 44, alpha: min(1, (p - Game.introLandShare - 0.15) / 0.1))
-      }
-      caption("Tap to skip", 400, visibleMaxY - 70, 15, alpha: 0.7)
     }
     c.restoreGState()
   }
@@ -217,29 +222,53 @@ final class WaterView: UIView {
   private static let markDepth = 330.0
 
   /// Where the home land (intro), the treasure island (sail-in, victory) and the player's boat sit.
+  /// Overshoots slightly past 1 and settles: used for pops (the ✗, "Set sail!").
+  static func easeOutBack(_ v: Double) -> Double {
+    let t = max(0, min(1, v)), c1 = 1.70158, c3 = c1 + 1
+    return 1 + c3 * pow(t - 1, 3) + c1 * pow(t - 1, 2)
+  }
+
   private func sceneLayout(_ top: Double, _ bottom: Double)
-    -> (landBottom: Double?, islandY: Double?, boatOffset: Double, boatX: Double?)
+    -> (landBottom: Double?, boatOffset: Double, boatX: Double?, pan: Double, landAlpha: Double)
   {
     switch game.status {
     case .intro:
-      // Land fills the screen down to a strip of ocean; then it slides up and away, fast.
+      // Land fills the screen down to a strip of ocean; then the view rushes up and out to sea.
       let p = 1 - game.introTime / Game.introDuration
-      let q = p < Game.introLandShare ? 0 : pow((p - Game.introLandShare) / (1 - Game.introLandShare), 1.6)
+      let s = p < Game.introLandShare ? 0 : (p - Game.introLandShare) / (1 - Game.introLandShare)
+      // Ease in, rush, ease out: the pan starts gently, speeds through the middle and lands softly.
+      let pan = s < 0.5 ? 4 * s * s * s : 1 - pow(-2 * s + 2, 3) / 2
       let shore = bottom - (bottom - top) * 0.2
       // The boat waits below the screen and only glides in once the fast-forward starts.
       let hiddenOffset = bottom + 120 - Game.playerY
-      return (shore - q * (bottom - top + 200), nil, hiddenOffset * (1 - q), nil)
+      if reducedMotion {
+        // No camera motion: the land fades away and the boat is simply there.
+        return (shore, s > 0 ? 0 : hiddenOffset, nil, 0, 1 - min(1, s * 4))
+      }
+      return (shore - pan * (bottom - top + 200), hiddenOffset * (1 - pan), nil, s > 0 ? s : 0, 1)
     case .won:
-      return (nil, 280, -190, 400)
+      // Moored at the jetty of the same land the voyage started from.
+      let shore = Self.homeShore(top, bottom)
+      return (shore, Self.dockY(shore) - Game.playerY, Self.dockX, 0, 1)
     default:
-      guard game.outro > 0 else { return (nil, nil, 0, nil) }
+      guard game.outro > 0 else { return (nil, 0, nil, 0, 1) }
+      // Journey's end: the home land slides into view and the boat sails up to its jetty.
       let t = max(0, min(1, 1 - game.outro / Game.outroDuration)), q = t * t * (3 - 2 * t)
-      return (nil, -260 + q * 540, -q * 190, game.x + (400 - game.x) * q)
+      let shore = Self.homeShore(top, bottom), start = top - 160
+      let land = reducedMotion ? shore : start + (shore - start) * q
+      let boatY = Game.playerY + (Self.dockY(shore) - Game.playerY) * q
+      return (land, boatY - Game.playerY, game.x + (Self.dockX - game.x) * q, 0, reducedMotion ? q : 1)
     }
   }
 
-  /// A palm tree: ink-outlined trunk and fronds.
+  /// Where the home shore rests at the end of the voyage, and where the boat moors beside the jetty.
+  private static func homeShore(_ top: Double, _ bottom: Double) -> Double { top + (bottom - top) * 0.55 }
+  private static let dockX = 500.0
+  private static func dockY(_ shore: Double) -> Double { shore + 120 }
+
+  /// A palm tree with a hard drop shadow: ink-outlined trunk and fronds.
   private func palm(_ c: CGContext, _ x: Double, _ y: Double) {
+    oval(c, x + 12, y + 66, 34, 11, Ink.outline, alpha: 0.18)
     line(c, x - 16, y + 62, x, y, Ink.outline, 12)
     line(c, x - 16, y + 62, x, y, "9A6E48", 7)
     for i in 0...5 {
@@ -249,69 +278,133 @@ final class WaterView: UIView {
       line(c, x, y, ex, ey, "2E8A55", 10)
     }
   }
-
-  /// The home shore at the start of a voyage: green land with an ✗ marking the treasure map,
-  /// a sandy beach, and the ocean below.
-  private func homeLand(_ c: CGContext, _ left: Double, _ right: Double, _ top: Double, _ shore: Double, _ t: Double) {
-    guard shore > top else { return }
-    let wave = sin(t * 2) * 3
-    for x in stride(from: left, through: right, by: 56) {
-      oval(c, x, shore + 14 + wave, 46, 20, "FFFFFF", alpha: 0.45)
-      oval(c, x, shore + 4, 44, 18, "7FD8CB")
-    }
-    c.setFillColor(UIColor(hex: "F6DCA0").cgColor)
-    c.fill(CGRect(x: left, y: top, width: right - left, height: shore - top))
-    for x in stride(from: left, through: right, by: 52) { oval(c, x, shore - 2, 40, 14, "F6DCA0") }
-    let grass = shore - 46
-    c.setFillColor(UIColor(hex: "5FB36A").cgColor)
-    c.fill(CGRect(x: left, y: top, width: right - left, height: max(0, grass - top)))
-    for x in stride(from: left, through: right, by: 48) { oval(c, x, grass, 36, 16, "5FB36A") }
-    for (dx, dy, rx, ry) in [(120.0, 150.0, 90.0, 50.0), (650, 120, 110, 60), (260, 520, 120, 70), (560, 460, 90, 55), (90, 700, 100, 60), (700, 760, 120, 70)] {
-      oval(c, dx, grass - dy, rx, ry, "4C9A5A")
-    }
-    for (px, py) in [(110.0, 120.0), (700, 150), (180, 430), (640, 560), (330, 720), (90, 860)] { palm(c, px, grass - py) }
-    // ✗ marks the spot.
-    let xY = shore - Self.markDepth
-    oval(c, 400, xY + 6, 60, 26, "8A6A3A", alpha: 0.3)
-    for (dx, dy) in [(1.0, 1.0), (1.0, -1.0)] {
-      line(c, 400 - 36 * dx, xY - 36 * dy, 400 + 36 * dx, xY + 36 * dy, Ink.outline, 20)
-      line(c, 400 - 36 * dx, xY - 36 * dy, 400 + 36 * dx, xY + 36 * dy, "D9483B", 12)
-    }
+  /// A round bush with a shadow, ink rim and highlight.
+  private func bush(_ c: CGContext, _ x: Double, _ y: Double, _ r: Double) {
+    oval(c, x + 6, y + r * 0.7, r, r * 0.4, Ink.outline, alpha: 0.18)
+    oval(c, x, y, r, r * 0.8, "3F8A4F")
+    ring(c, x, y, r, r * 0.8, Ink.outline, 3, alpha: 0.6)
+    oval(c, x - r * 0.3, y - r * 0.25, r * 0.4, r * 0.25, "6FC27A")
+  }
+  /// Fills the area between two wavy horizontal edges.
+  private func band(_ c: CGContext, _ left: Double, _ right: Double, _ top: (Double) -> Double, _ bottom: (Double) -> Double, _ color: String, alpha: Double = 1) {
+    let path = CGMutablePath()
+    path.move(to: CGPoint(x: left, y: top(left)))
+    for x in stride(from: left, through: right, by: 10) { path.addLine(to: CGPoint(x: x, y: top(x))) }
+    for x in stride(from: right, through: left, by: -10) { path.addLine(to: CGPoint(x: x, y: bottom(x))) }
+    path.closeSubpath()
+    c.addPath(path)
+    c.setFillColor(UIColor(hex: color).withAlphaComponent(alpha).cgColor)
+    c.fillPath()
+  }
+  /// Strokes a wavy horizontal edge.
+  private func edge(_ c: CGContext, _ left: Double, _ right: Double, _ y: (Double) -> Double, _ color: String, _ width: Double, alpha: Double = 1) {
+    let path = CGMutablePath()
+    path.move(to: CGPoint(x: left, y: y(left)))
+    for x in stride(from: left, through: right, by: 10) { path.addLine(to: CGPoint(x: x, y: y(x))) }
+    c.addPath(path)
+    c.setStrokeColor(UIColor(hex: color).withAlphaComponent(alpha).cgColor)
+    c.setLineWidth(width)
+    c.setLineJoin(.round)
+    c.strokePath()
   }
 
-  /// A sandy island with a palm and an open, glowing treasure chest.
-  private func treasureIsland(_ c: CGContext, _ x: Double, _ y: Double, _ t: Double) {
-    let swell = sin(t * 1.6) * 3, pulse = (sin(t * 4) + 1) / 2
-    oval(c, x, y, 160 + swell, 118 + swell, "FFFFFF", alpha: 0.35)
-    oval(c, x, y, 150, 108, "7FD8CB")
-    oval(c, x, y, 134, 94, "F6DCA0")
-    ring(c, x, y, 134, 94, Ink.outline, 3, alpha: 0.5)
-    oval(c, x - 70, y + 10, 46, 34, "5FB36A")
-    // Palm
-    line(c, x - 70, y + 12, x - 54, y - 50, Ink.outline, 12)
-    line(c, x - 70, y + 12, x - 54, y - 50, "9A6E48", 7)
-    for i in 0...5 {
-      let a = Double(i) * .pi / 3 + 0.2
-      let ex = x - 54 + cos(a) * 44, ey = y - 50 + sin(a) * 28
-      line(c, x - 54, y - 50, ex, ey, Ink.outline, 15, alpha: 0.85)
-      line(c, x - 54, y - 50, ex, ey, "2E8A55", 10)
+  /// The home shore at the start of a voyage, drawn in the game's toy style: an outlined
+  /// coastline, a jetty, a dotted treasure-map trail and the ✗ over buried treasure.
+  private func homeLand(_ c: CGContext, _ left: Double, _ right: Double, _ top: Double, _ shore: Double, _ t: Double) {
+    guard shore > top else { return }
+    let motion = reducedMotion ? 0 : t
+    let sandEdge: (Double) -> Double = { shore + sin($0 * 0.035) * 6 }
+    let grassEdge: (Double) -> Double = { shore - 50 + sin($0 * 0.028 + 1.3) * 9 }
+    // Wet shallows and a foam line that laps at the beach.
+    band(c, left, right, sandEdge, { shore + 30 + sin($0 * 0.05 + motion * 2) * 4 }, "7FD8CB")
+    edge(c, left, right, { shore + 30 + sin($0 * 0.05 + motion * 2) * 4 }, "FFFFFF", 7, alpha: 0.55)
+    // Sand, then grass, each with an ink outline like the game's islands and rocks.
+    band(c, left, right, { _ in top }, sandEdge, "F6DCA0")
+    edge(c, left, right, sandEdge, Ink.outline, 3, alpha: 0.5)
+    band(c, left, right, { _ in top }, grassEdge, "5FB36A")
+    edge(c, left, right, grassEdge, Ink.outline, 3, alpha: 0.4)
+    // A wooden jetty where the voyage begins.
+    let jx = 560.0
+    polygon(c, [jx - 22, shore - 18, jx + 22, shore - 18, jx + 22, shore + 96, jx - 22, shore + 96], "B07B4C", outline: 3)
+    for py in stride(from: shore - 4, through: shore + 86, by: 16) { line(c, jx - 20, py, jx + 20, py, "8A5A34", 2) }
+    for (px, py) in [(jx - 22, shore + 40), (jx + 22, shore + 40), (jx - 22, shore + 96), (jx + 22, shore + 96)] {
+      oval(c, px, py, 6, 6, "6E4830")
+      ring(c, px, py, 6, 6, Ink.outline, 2)
     }
-    // Chest with a golden glow and sparkles
-    let cx = x + 34, cy = y + 4
-    oval(c, cx, cy, 64 + pulse * 8, 50 + pulse * 6, "FFD34D", alpha: 0.22 + pulse * 0.12)
-    polygon(c, [cx - 34, cy - 30, cx + 34, cy - 30, cx + 30, cy - 52, cx - 30, cy - 52], "A86E42", outline: 3)
-    for (dx, dy) in [(-16.0, -12.0), (0, -16), (14, -11), (-6, -6), (8, -4)] { oval(c, cx + dx, cy + dy, 8, 6, "FFD34D") }
-    oval(c, cx + 2, cy - 18, 5, 5, "E0475B")
-    polygon(c, [cx - 34, cy - 8, cx + 34, cy - 8, cx + 34, cy + 26, cx - 34, cy + 26], "8A5A34", outline: 3)
-    line(c, cx - 34, cy + 2, cx + 34, cy + 2, "F3C75F", 4)
-    line(c, cx - 34, cy + 18, cx + 34, cy + 18, "F3C75F", 4)
-    polygon(c, [cx - 6, cy - 4, cx + 6, cy - 4, cx + 6, cy + 10, cx - 6, cy + 10], "F3C75F", outline: 2)
-    for i in 0..<4 {
-      let a = t * 0.9 + Double(i) * .pi / 2, r = 58.0, sx = cx + cos(a) * r, sy = cy - 10 + sin(a) * r * 0.6
-      let s = 4 + pulse * 4
-      line(c, sx - s, sy, sx + s, sy, "FFF6E0", 2.5, alpha: 0.6 + pulse * 0.4)
-      line(c, sx, sy - s, sx, sy + s, "FFF6E0", 2.5, alpha: 0.6 + pulse * 0.4)
+    // Grass detail: darker meadows, tufts and a few flowers.
+    for (dx, dy, rx, ry) in [(120.0, 170.0, 90.0, 46.0), (650, 140, 110, 54), (260, 560, 120, 64), (600, 480, 90, 50), (90, 740, 100, 56), (700, 800, 120, 64)] {
+      oval(c, dx, shore - dy, rx, ry, "4C9A5A")
     }
+    for i in 0..<46 {
+      let tx = left + Double(i * 157 % 941) / 941 * (right - left)
+      let ty = shore - 70 - Double(i * 89 % 997) / 997 * 900
+      line(c, tx - 4, ty, tx - 6, ty - 9, "3E8A4C", 2.5)
+      line(c, tx, ty, tx, ty - 11, "3E8A4C", 2.5)
+      line(c, tx + 4, ty, tx + 6, ty - 9, "3E8A4C", 2.5)
+      if i % 5 == 0 { oval(c, tx + 10, ty - 6, 3.5, 3.5, i % 10 == 0 ? "FFF6E0" : "FFC94D") }
+    }
+    for (bx, by, r) in [(230.0, 250.0, 26.0), (660, 330, 30), (110, 470, 24), (520, 650, 28)] { bush(c, bx, shore - by, r) }
+    for (px, py) in [(110.0, 130.0), (700, 170), (180, 430), (650, 580), (330, 760), (90, 900)] { palm(c, px, shore - py) }
+    // A dotted treasure-map trail from the jetty up to the ✗.
+    let mx = 400.0, my = shore - Self.markDepth
+    for i in 0...16 {
+      let u = Double(i) / 16, v = 1 - u
+      let px = v * v * jx + 2 * v * u * 560 + u * u * (mx + 50)
+      let py = v * v * (shore - 30) + 2 * v * u * (my + 40) + u * u * (my + 34)
+      oval(c, px, py, 4.5, 4.5, "D9483B", alpha: 0.85)
+    }
+    buriedTreasure(c, mx, my, t)
+  }
+
+  /// ✗ marks the spot: two pieces of sun-bleached driftwood crossed on a sand mound in a sandy
+  /// clearing, with the corner of a buried chest peeking out. No gold on show: it stays buried.
+  private func buriedTreasure(_ c: CGContext, _ x: Double, _ y: Double, _ t: Double) {
+    // The ✗ pops in with a small overshoot as the scene appears.
+    let p = 1 - game.introTime / Game.introDuration
+    let pop = game.status != .intro || reducedMotion ? 1 : Self.easeOutBack(min(1, p / 0.12))
+    // Sandy clearing with ripples.
+    oval(c, x + 4, y + 8, 124, 80, Ink.outline, alpha: 0.12)
+    oval(c, x, y, 120, 78, "F6DCA0")
+    ring(c, x, y, 120, 78, Ink.outline, 3, alpha: 0.5)
+    for (dx, dy) in [(-92.0, -36.0), (60, -54), (-84, 42), (70, 48)] {
+      let path = CGMutablePath()
+      path.move(to: CGPoint(x: x + dx, y: y + dy))
+      path.addQuadCurve(to: CGPoint(x: x + dx + 24, y: y + dy), control: CGPoint(x: x + dx + 12, y: y + dy - 8))
+      c.addPath(path)
+      c.setStrokeColor(UIColor(hex: "E5C384").cgColor)
+      c.setLineWidth(3)
+      c.setLineCap(.round)
+      c.strokePath()
+    }
+    // The sand mound and the buried chest's corner.
+    oval(c, x + 5, y + 10, 76, 46, Ink.outline, alpha: 0.18)
+    oval(c, x, y, 72, 44, "E9C98A")
+    ring(c, x, y, 72, 44, Ink.outline, 3)
+    oval(c, x - 12, y - 12, 40, 18, "F7E2B0")
+    polygon(c, [x + 20, y + 14, x + 56, y + 6, x + 60, y + 32, x + 24, y + 38], "8A5A34", outline: 3)
+    line(c, x + 22, y + 24, x + 58, y + 16, "F3C75F", 4)
+    // Two driftwood branches crossed into the ✗.
+    c.saveGState()
+    c.translateBy(x: x, y: y)
+    c.scaleBy(x: pop, y: pop)
+    func branch(_ pts: [Double], _ wood: String) {
+      let path = CGMutablePath()
+      path.move(to: CGPoint(x: pts[0], y: pts[1]))
+      path.addCurve(to: CGPoint(x: pts[6], y: pts[7]), control1: CGPoint(x: pts[2], y: pts[3]), control2: CGPoint(x: pts[4], y: pts[5]))
+      path.addCurve(to: CGPoint(x: pts[12], y: pts[13]), control1: CGPoint(x: pts[8], y: pts[9]), control2: CGPoint(x: pts[10], y: pts[11]))
+      c.setLineCap(.round)
+      c.addPath(path); c.setStrokeColor(UIColor(hex: Ink.outline).cgColor); c.setLineWidth(18); c.strokePath()
+      c.addPath(path); c.setStrokeColor(UIColor(hex: wood).cgColor); c.setLineWidth(11); c.strokePath()
+    }
+    branch([-56, -26, -36, -22, -16, -8, 0, 4, 16, 16, 34, 26, 50, 30], "B8A48A")
+    branch([54, -28, 36, -20, 18, -8, 2, 6, -14, 20, -30, 30, -46, 36], "CDBA9E")
+    for (x1, y1, x2, y2) in [(30.0, -14.0, 40.0, -26.0), (-30, 14, -36, 26)] {
+      line(c, x1, y1, x2, y2, Ink.outline, 6)
+      line(c, x1, y1, x2, y2, "CDBA9E", 3)
+    }
+    oval(c, -30, -12, 2.5, 2.5, "7E6B55")
+    oval(c, 20, 10, 2.5, 2.5, "7E6B55")
+    c.restoreGState()
   }
 
   /// A tapering arm along `pts`, with a pale underside and suckers.
@@ -429,20 +522,6 @@ final class WaterView: UIView {
       tentacle(c, pts, 40, alpha: 1)
       oval(c, lx, end, 44, 16, "FFFFFF", alpha: 0.7)
     }
-  }
-
-  /// Large caption text centred on `x` with a soft shadow, used by the intro scene.
-  private func caption(_ text: String, _ x: Double, _ y: Double, _ size: Double, alpha: Double = 1) {
-    let shadow = NSShadow()
-    shadow.shadowColor = UIColor(hex: Ink.outline).withAlphaComponent(0.8 * alpha)
-    shadow.shadowOffset = CGSize(width: 0, height: 3)
-    shadow.shadowBlurRadius = 4
-    let attributes: [NSAttributedString.Key: Any] = [
-      .font: UIFont.systemFont(ofSize: size, weight: .black),
-      .foregroundColor: UIColor(hex: "FFF6E0").withAlphaComponent(alpha), .shadow: shadow,
-    ]
-    let width = (text as NSString).size(withAttributes: attributes).width
-    (text as NSString).draw(at: CGPoint(x: x - width / 2, y: y), withAttributes: attributes)
   }
 
   // MARK: Primitives

@@ -328,6 +328,8 @@ struct GameScreen: View {
   @ObservedObject var model: GameModel
   @State private var help = false
   @State private var watchingAd = false
+  /// The treasure sequence plays once when a voyage is won, then gives way to the score screen.
+  @State private var showingTreasure = false
   @State private var firePressed = false
   @Environment(\.dynamicTypeSize) private var typeSize
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -347,15 +349,7 @@ struct GameScreen: View {
         .ignoresSafeArea()
         .accessibilityHidden(model.game.status != .playing)
         if model.game.status == .intro {
-          // The whole screen skips the intro; VoiceOver users can skip it too.
-          Color.clear
-            .contentShape(Rectangle())
-            .onTapGesture(perform: model.skipIntro)
-            .accessibilityElement()
-            .accessibilityLabel("Skip intro and set sail")
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction { model.skipIntro() }
-            .ignoresSafeArea()
+          introOverlay
         } else if model.game.status == .playing {
           VStack(spacing: 0) {
             hud(landscape: landscape)
@@ -377,10 +371,16 @@ struct GameScreen: View {
           // Keep the real-time HUD compact; menus retain the full Dynamic Type range.
           .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
           .transition(.opacity)
+        } else if model.game.status == .won && showingTreasure {
+          TreasureSequence { showingTreasure = false }
+            .transition(.opacity)
         } else {
           menu
             .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96)))
         }
+      }
+      .onChange(of: model.game.status) { status in
+        if status == .won { showingTreasure = true }
       }
       .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.38, dampingFraction: 0.82), value: model.game.status)
     }
@@ -413,6 +413,66 @@ struct GameScreen: View {
       hullCard.frame(maxWidth: landscape ? 280 : .infinity)
       if landscape { Spacer(minLength: 0) }
       scoreCard
+    }
+  }
+
+  // MARK: Intro
+
+  /// Intro UI: the scene itself can be tapped to skip, plus a labelled clay Skip button that
+  /// fills as the intro plays, and a gold "Set sail!" banner as the boat heads out to sea.
+  private var introOverlay: some View {
+    let p = max(0, min(1, 1 - model.game.introTime / Game.introDuration))
+    // The banner pops in once the land has mostly scrolled away, so it never covers the ✗.
+    let bannerT = max(0, min(1, (p - Game.introLandShare - 0.3) / 0.12))
+    let pop = reduceMotion ? 1 : WaterView.easeOutBack(bannerT)
+    return ZStack {
+      Color.clear
+        .contentShape(Rectangle())
+        .onTapGesture(perform: model.skipIntro)
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
+      VStack {
+        HStack {
+          Spacer()
+          Button(action: model.skipIntro) {
+            HStack(spacing: 6) {
+              Text("Skip")
+              Image(systemName: "forward.end.fill").font(.caption.weight(.black))
+            }
+            .font(.subheadline.weight(.heavy))
+            .padding(.horizontal, 18)
+            .frame(minHeight: 44)
+            .overlay(alignment: .bottom) {
+              // Progress through the intro, so players know how long is left.
+              GeometryReader { g in
+                ZStack(alignment: .leading) {
+                  Capsule().fill(Theme.ink.opacity(0.5))
+                  Capsule().fill(Theme.gold).frame(width: g.size.width * p)
+                }
+              }
+              .frame(height: 4)
+              .padding(.horizontal, 14)
+              .padding(.bottom, 5)
+            }
+          }
+          .buttonStyle(ClayButtonStyle(radius: 22))
+          .accessibilityLabel("Skip intro and set sail")
+        }
+        Spacer()
+      }
+      .padding(.horizontal, 16)
+      .padding(.top, 8)
+      if bannerT > 0 {
+        Label("Set sail!", systemImage: symbol("sailboat.fill"))
+          .font(.title.weight(.black))
+          .foregroundStyle(Theme.ink)
+          .padding(.horizontal, 26).padding(.vertical, 14)
+          .clay(top: Theme.goldTop, fill: Theme.gold, radius: 24)
+          .scaleEffect(pop)
+          .opacity(min(1, bannerT * 1.5))
+          .offset(y: -90)
+          .accessibilityHidden(true)
+      }
     }
   }
 
@@ -555,14 +615,16 @@ struct GameScreen: View {
       ).ignoresSafeArea()
       ScrollView {
         VStack(spacing: 18) {
-          Text(
-            status == .ready
-              ? "SAIL 1,500 M TO THE TREASURE"
-              : status == .paused ? "TAKE A BREATHER" : status == .won ? "THE KRAKEN IS DEFEATED" : "VOYAGE COMPLETE"
-          )
-          .font(.caption.weight(.black)).tracking(1.6).foregroundStyle(Theme.gold)
-          .padding(.horizontal, 12).padding(.vertical, 6)
-          .background(Theme.ink.opacity(0.85), in: Capsule())
+          // The win screen opens straight on its title; the other menus keep a caption chip.
+          if status != .won {
+            Text(
+              status == .ready
+                ? "SAIL 1,500 M TO THE TREASURE" : status == .paused ? "TAKE A BREATHER" : "VOYAGE COMPLETE"
+            )
+            .font(.caption.weight(.black)).tracking(1.6).foregroundStyle(Theme.gold)
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .background(Theme.ink.opacity(0.85), in: Capsule())
+          }
           title
           if finished { results }
           bestChip
@@ -601,7 +663,7 @@ struct GameScreen: View {
 
   private var title: some View {
     let text =
-      status == .ready ? "WAKE\nRUNNER" : status == .paused ? "PAUSED" : status == .won ? "TREASURE\nFOUND!" : "WHAT A\nVOYAGE!"
+      status == .ready ? "WAKE\nRUNNER" : status == .paused ? "PAUSED" : status == .won ? "VOYAGE\nCOMPLETE!" : "WHAT A\nVOYAGE!"
     return ZStack {
       Text(text).foregroundStyle(Theme.ink).offset(y: 4).accessibilityHidden(true)
       Text(text).foregroundStyle(Theme.cream)
@@ -799,6 +861,259 @@ struct GameScreen: View {
         ToolbarItem(placement: .confirmationAction) {
           Button("Done") { help = false }.font(.body.weight(.heavy)).tint(Theme.gold)
         }
+      }
+    }
+  }
+}
+
+/// The treasure sequence after the boat docks, before the score screen:
+/// 1. Treasure Found: tap the chest to open it.
+/// 2. The chest opens: a ship in a bottle and a sealed letter. "Read the letter".
+/// 3. The letter: "Dunk this ship in water." — Barbosa. "Keep the bottle".
+/// Skip on every step goes straight to the score. Matches TreasureSequence on Android.
+struct TreasureSequence: View {
+  let onDone: () -> Void
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var step = 0
+  @State private var progress = 0.0
+
+  var body: some View {
+    ZStack {
+      Theme.deep.ignoresSafeArea()
+      RadialGradient(colors: [Color(hex: "FFF1B8").opacity(step == 0 ? 0.10 : 0.18), .clear],
+                     center: .center, startRadius: 10, endRadius: 340)
+        .ignoresSafeArea()
+      VStack(spacing: 16) {
+        HStack {
+          Spacer()
+          Button(action: onDone) {
+            Text("Skip").font(.subheadline.weight(.heavy)).padding(.horizontal, 18).frame(minHeight: 44)
+          }
+          .buttonStyle(ClayButtonStyle(radius: 22))
+          .accessibilityLabel("Skip to score")
+        }
+        Group {
+          switch step {
+          case 0: found
+          case 1: opened
+          default: letter
+          }
+        }
+        .id(step)
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.97)))
+      }
+      .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 16)
+      .frame(maxWidth: 460)
+    }
+  }
+
+  private func title(_ text: String, size: Font.TextStyle = .largeTitle) -> some View {
+    ZStack {
+      Text(text).foregroundStyle(Theme.ink).offset(y: 4).accessibilityHidden(true)
+      Text(text).foregroundStyle(Theme.cream)
+    }
+    .font(.system(size, design: .rounded).weight(.black))
+    .multilineTextAlignment(.center)
+    .accessibilityAddTraits(.isHeader)
+  }
+
+  private func go(_ next: Int) {
+    if reduceMotion { step = next } else { withAnimation(.easeOut(duration: 0.25)) { step = next } }
+  }
+
+  /// Step 1: the closed chest is the button.
+  private var found: some View {
+    VStack(spacing: 14) {
+      Text("THE ISLAND'S SECRET").font(.caption.weight(.black)).tracking(1.6).foregroundStyle(Theme.gold)
+        .padding(.horizontal, 12).padding(.vertical, 6).background(Theme.ink.opacity(0.85), in: Capsule())
+      title("TREASURE\nFOUND!").scaleEffect(1.15).padding(.vertical, 6)
+      Spacer(minLength: 0)
+      Button {
+        go(1)
+        if reduceMotion { progress = 1 } else { withAnimation(.easeOut(duration: 1.6).delay(0.2)) { progress = 1 } }
+      } label: {
+        TreasureChestArt(progress: 0).frame(height: 210).contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel("Open the chest")
+      Text("Tap the chest to open it")
+        .font(.subheadline.weight(.heavy)).foregroundStyle(Theme.ink)
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .background(Theme.cream, in: Capsule())
+        .overlay(Capsule().strokeBorder(Theme.ink, lineWidth: 2.5))
+        .accessibilityHidden(true)
+      Spacer(minLength: 0)
+    }
+  }
+
+  /// Step 2: the chest opens to the ship in a bottle and a sealed letter.
+  private var opened: some View {
+    VStack(spacing: 14) {
+      title("A ship in a bottle!", size: .title)
+      Spacer(minLength: 0)
+      TreasureChestArt(progress: progress)
+        .frame(height: 230)
+        .accessibilityElement()
+        .accessibilityLabel("The open chest holds a ship in a bottle and a sealed letter")
+      Text("…and a sealed letter tucked beside it.")
+        .font(.subheadline.weight(.bold)).foregroundStyle(Theme.creamMuted)
+      Spacer(minLength: 0)
+      Button { go(2) } label: {
+        Label("Read the letter", systemImage: "envelope.open.fill")
+          .font(.title3.weight(.black)).frame(maxWidth: .infinity, minHeight: 60)
+      }
+      .buttonStyle(ClayButtonStyle(kind: .primary, radius: 22))
+    }
+  }
+
+  /// Step 3: the letter itself.
+  private var letter: some View {
+    VStack(spacing: 18) {
+      Spacer(minLength: 0)
+      BottleArt().frame(height: 90).accessibilityHidden(true)
+      VStack(alignment: .leading, spacing: 10) {
+        Text("“Dunk this ship in water.”")
+          .font(.system(.title2, design: .serif).italic().weight(.bold))
+        Text("— Barbosa")
+          .font(.system(.title3, design: .serif).italic())
+          .frame(maxWidth: .infinity, alignment: .trailing)
+      }
+      .foregroundStyle(Theme.ink)
+      .padding(.horizontal, 20).padding(.vertical, 22)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(hex: "F6E7C1")))
+      .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.ink, lineWidth: 3))
+      .overlay(alignment: .topTrailing) {
+        Circle().fill(Color(hex: "D9483B")).frame(width: 30, height: 30)
+          .overlay(Circle().strokeBorder(Theme.ink, lineWidth: 2.5)).offset(x: 8, y: -12)
+      }
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel("The letter reads: Dunk this ship in water. Signed, Barbosa.")
+      Spacer(minLength: 0)
+      Button(action: onDone) {
+        Label("Keep the bottle", systemImage: "checkmark")
+          .font(.title3.weight(.black)).frame(maxWidth: .infinity, minHeight: 60)
+      }
+      .buttonStyle(ClayButtonStyle(kind: .primary, radius: 22))
+    }
+  }
+}
+
+/// Just the ship in a bottle, for the letter screen.
+private struct BottleArt: View {
+  var body: some View {
+    Canvas { ctx, size in
+      let s = min(size.width / 140, size.height / 50)
+      var c = ctx
+      c.translateBy(x: size.width / 2, y: size.height / 2)
+      c.scaleBy(x: s, y: s)
+      TreasureChestArt.drawBottle(c, x: -8, y: 0, angle: -6)
+    }
+  }
+}
+
+/// Front view of the opening chest, drawn in the game's toy style on a 300 × 170 grid.
+private struct TreasureChestArt: View, Animatable {
+  var progress: Double
+  var animatableData: Double {
+    get { progress }
+    set { progress = newValue }
+  }
+
+  /// The corked bottle with a little ship inside, centred on (x, y) in the 300 × 170 grid.
+  static func drawBottle(_ ctx: GraphicsContext, x: Double, y: Double, angle: Double = -10) {
+    let ink = Color(hex: "0B2530")
+    func poly(_ pts: [CGPoint]) -> Path { var p = Path(); p.addLines(pts); p.closeSubpath(); return p }
+    var b = ctx
+    b.translateBy(x: x, y: y)
+    b.rotate(by: .degrees(angle))
+    let glass = Path(roundedRect: CGRect(x: -55, y: -17, width: 95, height: 34), cornerRadius: 17)
+    b.fill(glass, with: .color(Color(hex: "A8ECF2").opacity(0.4)))
+    b.fill(Path(roundedRect: CGRect(x: -51, y: 4, width: 88, height: 10), cornerRadius: 5), with: .color(Color(hex: "1E8C9A").opacity(0.85)))
+    let hull = poly([CGPoint(x: -30, y: 3), CGPoint(x: 10, y: 3), CGPoint(x: 4, y: 10), CGPoint(x: -26, y: 10)])
+    b.fill(hull, with: .color(Color(hex: "4A3328")))
+    b.stroke(hull, with: .color(ink), lineWidth: 1.5)
+    var masts = Path()
+    masts.move(to: CGPoint(x: -16, y: 3)); masts.addLine(to: CGPoint(x: -16, y: -12))
+    masts.move(to: CGPoint(x: -2, y: 3)); masts.addLine(to: CGPoint(x: -2, y: -9))
+    b.stroke(masts, with: .color(ink), lineWidth: 2)
+    for sail in [poly([CGPoint(x: -15, y: -11), CGPoint(x: -6, y: -1), CGPoint(x: -15, y: -1)]),
+                 poly([CGPoint(x: -1, y: -8), CGPoint(x: 6, y: 0), CGPoint(x: -1, y: 0)])] {
+      b.fill(sail, with: .color(Color(hex: "FFF6E0")))
+      b.stroke(sail, with: .color(ink), lineWidth: 1.2)
+    }
+    b.fill(poly([CGPoint(x: -16, y: -12), CGPoint(x: -10, y: -14), CGPoint(x: -16, y: -16)]), with: .color(Color(hex: "D9483B")))
+    b.stroke(glass, with: .color(ink), lineWidth: 3)
+    let neck = Path(roundedRect: CGRect(x: 38, y: -8, width: 22, height: 16), cornerRadius: 3)
+    b.fill(neck, with: .color(Color(hex: "A8ECF2").opacity(0.4)))
+    b.stroke(neck, with: .color(ink), lineWidth: 3)
+    let cork = Path(roundedRect: CGRect(x: 59, y: -7, width: 11, height: 14), cornerRadius: 3)
+    b.fill(cork, with: .color(Color(hex: "9A6E48")))
+    b.stroke(cork, with: .color(ink), lineWidth: 2)
+    var shine = Path(); shine.move(to: CGPoint(x: -40, y: -10)); shine.addLine(to: CGPoint(x: 20, y: -10))
+    b.stroke(shine, with: .color(.white.opacity(0.65)), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+  }
+
+  private static func phase(_ p: Double, _ from: Double, _ length: Double) -> Double {
+    let t = max(0, min(1, (p - from) / length))
+    return t * t * (3 - 2 * t)
+  }
+
+  var body: some View {
+    Canvas { ctx, size in
+      let s = min(size.width / 300, size.height / 170)
+      ctx.translateBy(x: (size.width - 300 * s) / 2, y: (size.height - 170 * s) / 2)
+      ctx.scaleBy(x: s, y: s)
+      let ink = Color(hex: "0B2530")
+      let lid = Self.phase(progress, 0, 0.4), rise = Self.phase(progress, 0.3, 0.5), letter = Self.phase(progress, 0.55, 0.45)
+      func poly(_ pts: [CGPoint]) -> Path { var p = Path(); p.addLines(pts); p.closeSubpath(); return p }
+
+      ctx.fill(Path(ellipseIn: CGRect(x: 40, y: 142, width: 220, height: 22)), with: .color(ink.opacity(0.2)))
+      // Lid swinging back, then the dark inside of the chest.
+      let top = 80 - 23 * lid
+      let lidPath = poly([CGPoint(x: 95, y: 95), CGPoint(x: 215, y: 95), CGPoint(x: 215 - 6 * lid, y: top), CGPoint(x: 95 + 6 * lid, y: top)])
+      ctx.fill(lidPath, with: .color(Color(hex: lid > 0.5 ? "7A4E2E" : "A86E42")))
+      ctx.stroke(lidPath, with: .color(ink), style: StrokeStyle(lineWidth: 3, lineJoin: .round))
+      var band = Path(); band.move(to: CGPoint(x: 97 + 6 * lid, y: top + 6)); band.addLine(to: CGPoint(x: 213 - 6 * lid, y: top + 6))
+      ctx.stroke(band, with: .color(Color(hex: "F3C75F")), lineWidth: 4)
+      if lid > 0 {
+        ctx.fill(Path(CGRect(x: 100, y: 95 - 8 * lid, width: 110, height: 8 * lid)), with: .color(Color(hex: "3D2716")))
+      }
+      // Warm light, and the bottle rising out of the chest.
+      ctx.fill(Path(ellipseIn: CGRect(x: 155 - 70 * rise, y: 80 - 40 * rise, width: 140 * rise, height: 80 * rise)),
+               with: .color(Color(hex: "FFF1B8").opacity(0.55 * rise)))
+      if rise > 0 { Self.drawBottle(ctx, x: 155, y: 112 - 50 * rise) }  // hidden while the chest is shut
+      // Chest front, drawn over the bottle so it rises from inside.
+      let body = Path(roundedRect: CGRect(x: 95, y: 95, width: 120, height: 53), cornerRadius: 6)
+      ctx.fill(body, with: .color(Color(hex: "8A5A34")))
+      ctx.stroke(body, with: .color(ink), lineWidth: 3)
+      var bands = Path()
+      bands.move(to: CGPoint(x: 96, y: 110)); bands.addLine(to: CGPoint(x: 214, y: 110))
+      bands.move(to: CGPoint(x: 96, y: 134)); bands.addLine(to: CGPoint(x: 214, y: 134))
+      ctx.stroke(bands, with: .color(Color(hex: "F3C75F")), lineWidth: 5)
+      let lock = Path(roundedRect: CGRect(x: 148, y: 100, width: 14, height: 17), cornerRadius: 3)
+      ctx.fill(lock, with: .color(Color(hex: "F3C75F")))
+      ctx.stroke(lock, with: .color(ink), lineWidth: 2)
+      // The sealed letter slides in beside the chest.
+      if letter > 0 {
+        var l = ctx
+        l.opacity = letter
+        l.translateBy(x: 64 - 40 * (1 - letter), y: 126)
+        l.rotate(by: .degrees(-8))
+        let paper = Path(CGRect(x: -26, y: -20, width: 52, height: 40))
+        l.fill(paper, with: .color(Color(hex: "F2E2B8")))
+        l.stroke(paper, with: .color(ink), lineWidth: 2.5)
+        for y in [-21.0, 21.0] {
+          let curl = Path(ellipseIn: CGRect(x: -29, y: y - 5, width: 58, height: 10))
+          l.fill(curl, with: .color(Color(hex: "E5CF98")))
+          l.stroke(curl, with: .color(ink), lineWidth: 2)
+        }
+        var lines = Path()
+        for y in [-9.0, -1, 7] { lines.move(to: CGPoint(x: -18, y: y)); lines.addLine(to: CGPoint(x: 14, y: y)) }
+        l.stroke(lines, with: .color(ink.opacity(0.35)), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+        let seal = Path(ellipseIn: CGRect(x: 7, y: 8, width: 14, height: 14))
+        l.fill(seal, with: .color(Color(hex: "D9483B")))
+        l.stroke(seal, with: .color(ink), lineWidth: 2)
       }
     }
   }
