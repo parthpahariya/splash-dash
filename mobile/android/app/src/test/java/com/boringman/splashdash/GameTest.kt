@@ -14,21 +14,82 @@ class GameTest {
     @Test fun damageGraceAndJumpProtection() {
         val g = game(); assertTrue(g.damage(25)); assertFalse(g.damage(25)); assertEquals(75, g.health)
         g.invincible = 0.0; assertTrue(g.jump()); assertFalse(g.damage(25)); assertFalse(g.jump())
-        assertEquals(1, g.jumps)
+        assertFalse(g.jumpReady)
     }
-    @Test fun heartsRepairWithoutReplenishingJumps() {
+    @Test fun jumpIsUnlimitedAfterRecharge() {
+        val g = game(); g.invincible = 1000.0
+        repeat(5) {
+            assertTrue(g.jump()); assertEquals(0.0, g.jumpCharge, .001)
+            repeat(24) { g.update(.05) } // just over the 1.15 s in the air
+            assertFalse(g.jumping); assertFalse("still recharging just after landing", g.jump())
+            repeat(40) { g.update(.05) } // past the 2 s recharge
+            assertTrue(g.jumpReady); assertEquals(1.0, g.jumpCharge, .001)
+        }
+    }
+    @Test fun jumpRechargePausesWithGame() {
+        val g = game(); assertTrue(g.jump()); g.pause(); g.update(5.0); assertFalse(g.jumpReady)
+    }
+    @Test fun objectsEnterAndLeaveAtScreenEdges() {
+        val g = game(); g.visibleTop = -220.0; g.visibleBottom = 1060.0
+        val rock = g.spawn(Kind.ROCK, 0)!!; assertEquals(-300.0, rock.y, 0.0)
+        rock.y = 1000.0; g.update(0.0); assertTrue("still on screen above the bottom edge", rock in g.entities)
+        rock.y = 1170.0; g.update(0.0); assertFalse(rock in g.entities)
+        g.bullets.add(Bullet(337.0, -100.0, 0.0, 0.0, false)); g.update(0.0)
+        assertEquals("shots keep flying to the top edge", 1, g.bullets.size)
+    }
+    @Test fun atMostTwoRocksInARowPerLane() {
+        val g = game()
+        g.spawn(Kind.ROCK, 1, 300.0); g.spawn(Kind.ROCK, 1, 100.0)
+        assertEquals(2, g.rockStreak(1))
+        assertNotEquals("a third rock moves to another lane", 1, g.spawn(Kind.ROCK, 1)?.lane)
+        g.spawn(Kind.HEART, 1, -100.0)
+        assertEquals("a heart can be collected, so it does not break the run", 2, g.rockStreak(1))
+        val spaced = game()
+        spaced.spawn(Kind.ROCK, 2, 700.0); spaced.spawn(Kind.ROCK, 2, 100.0)
+        assertEquals("a wide gap starts a new run", 1, spaced.rockStreak(2))
+        assertEquals(2, spaced.spawn(Kind.ROCK, 2)?.lane)
+    }
+    @Test fun seededRunNeverStacksThreeRocks() {
+        var seed = 7L
+        val g = Game({ seed = seed * 6364136223846793005L + 1442695040888963407L; (seed ushr 11).toDouble() / (1L shl 53).toDouble() })
+        g.reset(); g.invincible = Double.POSITIVE_INFINITY
+        repeat(12000) {
+            g.update(.05); g.invincible = Double.POSITIVE_INFINITY
+            for (lane in 0..3) {
+                val rocks = g.entities.filter { it.lane == lane && it.kind == Kind.ROCK }.map { it.y }.sorted()
+                var run = 0
+                for ((i, y) in rocks.withIndex()) {
+                    run = if (i > 0 && y - rocks[i - 1] < Game.ROCK_RUN_GAP) run + 1 else 1
+                    assertTrue(run <= 2)
+                }
+            }
+        }
+    }
+    @Test fun piratesFireFromEntryUntilTheyLeave() {
+        val g = game(); g.visibleTop = -200.0
+        val pirate = g.spawn(Kind.PIRATE, 0)!!; assertTrue(pirate.y < g.visibleTop)
+        while (pirate.y <= g.visibleTop) g.update(.02)
+        assertFalse("no shots from off screen", g.bullets.any { it.enemy })
+        var t = 0.0
+        while (g.bullets.none { it.enemy }) { g.update(.02); t += .02 }
+        assertTrue("first shot within a second of entering", t <= 1.02)
+        // Still firing after passing the player's row.
+        pirate.y = Game.PLAYER_Y + 60; pirate.cooldown = 0.0; g.bullets.clear(); g.update(.01)
+        assertTrue(g.bullets.any { it.enemy })
+    }
+    @Test fun heartsRepair() {
         for (health in listOf(60, 95, 100)) {
             val g = game(); g.health = health; g.spawn(Kind.HEART, 1, Game.PLAYER_Y); g.update(0.0)
             assertEquals(minOf(100, health + 10), g.health); assertEquals(50, g.score); assertEquals(1, g.heartsCollected)
-            assertEquals(2, g.jumps)
+            assertTrue(g.jumpReady)
         }
     }
-    @Test fun automaticPickupsAreHeartsOnlyAndNeverRestoreJumps() {
+    @Test fun automaticPickupsAreHeartsOnly() {
         for (roll in listOf(.1, .9)) {
             val g = Game({ roll }); g.reset(); g.invincible = 100.0
             assertTrue(g.jump())
             repeat(160) { g.update(.05) }
-            assertEquals(1, g.jumps)
+            assertTrue(g.jumpReady)
             assertEquals(roll < .58, g.entities.any { it.kind == Kind.HEART })
         }
     }
@@ -66,7 +127,7 @@ class GameTest {
     }
     @Test fun levelAndReset() {
         val g = game(); g.distance = 300.0; g.update(0.0); assertEquals(2, g.level); assertTrue(g.speed > 125)
-        g.damage(100); g.reset(); assertEquals(100, g.health); assertEquals(2, g.jumps)
+        g.damage(100); g.reset(); assertEquals(100, g.health); assertTrue(g.jumpReady)
         assertEquals(Status.PLAYING, g.status); assertTrue(g.entities.isEmpty()); assertTrue(g.bullets.isEmpty())
     }
     @Test fun spawnSpacingAndOccupiedPirateLanes() {

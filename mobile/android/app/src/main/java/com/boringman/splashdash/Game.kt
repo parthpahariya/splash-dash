@@ -42,14 +42,31 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
         const val PLAYER_Y = 665.0
         const val JUMP_DURATION = 1.15
         const val PIRATE_GAP = 220.0
+        /** Jumps are unlimited; after landing the boat needs this long before it can jump again. */
+        const val JUMP_RECHARGE = 2.0
+        /** A lane never holds more than this many rocks back to back. */
+        const val MAX_ROCKS_IN_A_ROW = 2
+        /**
+         * Rocks closer than this (world units) belong to the same run. Hearts and ships between
+         * them do not break a run, because they can be collected or sunk, leaving the rocks adjacent.
+         */
+        const val ROCK_RUN_GAP = 360.0
     }
     var status = Status.READY
     var health = 100
     var lane = 1
     var x = LANES[1]
     var tilt = 0.0
-    var jumps = 2
+    /**
+     * World-space y of the screen's top and bottom edges, set by the renderer. Objects enter just
+     * above the top edge and leave just below the bottom edge, so nothing pops in or out
+     * mid-screen. Defaults match the 800-unit playfield for tests and headless use.
+     */
+    var visibleTop = 0.0
+    var visibleBottom = 800.0
+    val spawnY get() = visibleTop - 80
     var jumpTime = 0.0
+    var jumpCooldown = 0.0
     var invincible = 0.0
     var fireCooldown = 0.0
     var firing = false
@@ -72,11 +89,14 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
     val score get() = floor(distance * 2).toInt() + bonus
     val speed get() = 125.0 + min(145, (level - 1) * 17)
     val jumping get() = jumpTime > 0
+    val jumpReady get() = !jumping && jumpCooldown <= 0
+    /** 0 right after takeoff, 1 when the next jump is available. */
+    val jumpCharge get() = 1 - min(1.0, jumpCooldown / (JUMP_DURATION + JUMP_RECHARGE))
 
     fun reset() {
         status = Status.PLAYING
         health = 100; lane = 1; x = LANES[1]; tilt = 0.0
-        jumps = 2; jumpTime = 0.0; invincible = 0.0; fireCooldown = 0.0; firing = false
+        jumpTime = 0.0; jumpCooldown = 0.0; invincible = 0.0; fireCooldown = 0.0; firing = false
         distance = 0.0; bonus = 0; elapsed = 0.0; scroll = 0.0; level = 1
         lastSunkName = "Gunner"; lastSunkReward = 250
         piratesSunk = 0; heartsCollected = 0
@@ -89,8 +109,9 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
         if (status == Status.PLAYING) lane = (lane + direction.sign).coerceIn(0, 3)
     }
     fun jump(): Boolean {
-        if (status != Status.PLAYING || jumping || jumps == 0) return false
-        jumps--; jumpTime = JUMP_DURATION; onEvent("jump"); return true
+        if (status != Status.PLAYING || !jumpReady) return false
+        jumpTime = JUMP_DURATION; jumpCooldown = JUMP_DURATION + JUMP_RECHARGE
+        onEvent("jump"); return true
     }
     fun fire(target: Entity? = null): Boolean {
         if (status != Status.PLAYING || fireCooldown > 0) return false
@@ -117,15 +138,26 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
         if (health == 0) { status = Status.OVER; firing = false; onEvent("over") }
         return true
     }
-    fun spawn(kind: Kind, requestedLane: Int = (random() * 4).toInt(), atY: Double = -80.0, pirateType: PirateType = PirateType.GUNNER): Entity? {
-        var lane = requestedLane.coerceIn(0, 3); var y = atY
+    /** Rocks in the run a new rock would join at the top of [lane]. */
+    fun rockStreak(lane: Int): Int {
+        var edge = spawnY
+        var count = 0
+        for (rock in entities.filter { !it.dead && it.lane == lane && it.kind == Kind.ROCK }.sortedBy { it.y }) {
+            if (rock.y - edge >= ROCK_RUN_GAP) break
+            count++; edge = rock.y
+        }
+        return count
+    }
+    fun spawn(kind: Kind, requestedLane: Int? = null, atY: Double? = null, pirateType: PirateType = PirateType.GUNNER): Entity? {
+        var lane = (requestedLane ?: (random() * 4).toInt()).coerceIn(0, 3); var y = atY ?: spawnY
         if (kind == Kind.ROCK || kind == Kind.HEART) {
             lane = (0..3).map { (lane + it) % 4 }.firstOrNull { candidate ->
-                entities.none { !it.dead && it.lane == candidate && it.kind == Kind.PIRATE }
+                entities.none { !it.dead && it.lane == candidate && it.kind == Kind.PIRATE } &&
+                    (kind != Kind.ROCK || rockStreak(candidate) < MAX_ROCKS_IN_A_ROW)
             } ?: return null
         }
         if ((kind == Kind.ROCK || kind == Kind.PIRATE) && entities.any {
-            !it.dead && (it.kind == Kind.ROCK || it.kind == Kind.PIRATE) && it.y < 60 && it.lane == lane
+            !it.dead && (it.kind == Kind.ROCK || it.kind == Kind.PIRATE) && it.y < spawnY + 140 && it.lane == lane
         }) return null
         val neighbors = entities.filter { !it.dead && it.lane == lane }
         if (kind == Kind.PIRATE) {
@@ -139,7 +171,9 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
             val gap = if (kind == Kind.PIRATE && e.kind == Kind.PIRATE) PIRATE_GAP else 120.0
             if (abs(e.y - y) < gap) y = e.y - gap
         }
-        return Entity(nextID++, kind, lane, y, 1.5 + random(), pirateType).also { entities.add(it) }
+        // A pirate's first shot comes within a second of entering the screen.
+        val cooldown = if (kind == Kind.PIRATE) random() else 1.5 + random()
+        return Entity(nextID++, kind, lane, y, cooldown, pirateType).also { entities.add(it) }
     }
 
     fun choosePirate(): PirateType {
@@ -206,12 +240,12 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
         val dx = LANES[lane] - x
         x += dx * (1 - exp(-15 * dt))
         tilt += ((dx / 170).coerceIn(-.23, .23) - tilt) * min(1.0, dt * 12)
-        jumpTime = max(0.0, jumpTime - dt); invincible = max(0.0, invincible - dt)
+        jumpTime = max(0.0, jumpTime - dt); jumpCooldown = max(0.0, jumpCooldown - dt); invincible = max(0.0, invincible - dt)
         fireCooldown = max(0.0, fireCooldown - dt)
         if (firing) fire()
         spawnTimer -= dt; pickupTimer -= dt; pirateTimer -= dt
         if (spawnTimer <= 0) { spawn(Kind.ROCK); spawnTimer = max(.9, 1.8 - level * .07) + random() * .5 }
-        if (pickupTimer <= 0) { if (random() < .58) spawn(Kind.HEART); pickupTimer = 4 + random() * 3 }
+        if (pickupTimer <= 0) { if (random() < .58) spawn(Kind.HEART); pickupTimer = 10 + random() * 5 } // a new heart chance every 10–15 s
         if (pirateTimer <= 0) { val type = choosePirate(); if (spawn(Kind.PIRATE, pirateType = type) != null && type == PirateType.CAPTAIN) lastCaptainDistance = distance; pirateTimer = max(3.0, 7 - level * .35) + random() * 2 }
         for (e in entities) {
             var nextY = e.y + speed * dt * (if (e.kind == Kind.PIRATE) (if (e.charging) 2.8 else if (e.pirateType == PirateType.CAPTAIN) .32 else .44) else 1.0)
@@ -222,7 +256,8 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
             }
             e.y = max(e.y, nextY)
             e.hit = max(0.0, e.hit - dt); e.flash = max(0.0, e.flash - dt)
-            if (e.kind == Kind.PIRATE && e.y > 45 && !e.dead && (e.y < PLAYER_Y - 90 || e.warning > 0 || e.burstLeft > 0)) updatePirate(e, dt)
+            // Visible ships can attack from the moment they enter until they leave the screen.
+            if (e.kind == Kind.PIRATE && e.y > visibleTop && !e.dead) updatePirate(e, dt)
             if (!e.dead && abs(e.x - x) < 43 && abs(e.y - PLAYER_Y) < (if (e.kind == Kind.PIRATE) 64 else 42)) {
                 when (e.kind) {
                     Kind.HEART -> { health = min(100, health + 10); heartsCollected++; bonus += 50; e.dead = true; onEvent("heart") }
@@ -230,7 +265,7 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
                 }
                 if (status == Status.OVER) return
             }
-            if (e.y > 900) e.dead = true
+            if (e.y > visibleBottom + 100) e.dead = true
         }
         for (b in bullets) {
             if (b.dead) continue
@@ -255,7 +290,7 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
                     break
                 }
             }
-            if (b.x < -30 || b.x > 830 || b.y < -30 || b.y > 850) b.dead = true
+            if (b.x < -30 || b.x > 830 || b.y < visibleTop - 30 || b.y > visibleBottom + 50) b.dead = true
         }
         entities.removeAll { it.dead }; bullets.removeAll { it.dead }
     }
