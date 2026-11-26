@@ -22,7 +22,6 @@ class GameView(context: Context, val game: Game) : View(context) {
     private var scale = 1f
     private var offsetX = 0f
     private var offsetY = 0f
-    private var visibleBottom = 800.0
     private var downX = 0f
     private var downY = 0f
     private var anchor = 0f
@@ -41,7 +40,7 @@ class GameView(context: Context, val game: Game) : View(context) {
     }
 
     init {
-        contentDescription = "Four-lane waterway. Swipe left or right to steer, swipe up to jump, or tap a pirate or mine to aim. Custom actions also let you steer and jump."
+        contentDescription = "Four-lane waterway. Swipe left or right to steer, swipe up to jump, or tap a pirate to aim. Custom actions also let you steer and jump."
         isClickable = true
     }
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -68,7 +67,6 @@ class GameView(context: Context, val game: Game) : View(context) {
         val visibleWidth = (width / scale).toDouble()
         val visibleHeight = (height / scale).toDouble()
         val visibleMaxY = visibleMinY + visibleHeight
-        visibleBottom = visibleMaxY
         // Spawn above and despawn below the physical screen edges, not the gameplay insets.
         game.visibleTop = visibleMinY
         game.visibleBottom = visibleMaxY
@@ -132,15 +130,6 @@ class GameView(context: Context, val game: Game) : View(context) {
             Kind.HEART -> heart(c, e.x, e.y, time)
         }
         for (b in game.bullets) if (!b.dead) {
-            if (b.mine) {
-                val tint = if (b.armTime > 0) "E8D6A6" else "FFBD73"
-                oval(c, b.x, b.y + 6, 25.0, 14.0, "BDE6CC", .3)
-                for (i in 0..7) { val a = i * PI / 4; line(c, b.x + cos(a) * 13, b.y + sin(a) * 13, b.x + cos(a) * 22, b.y + sin(a) * 22, tint, 4f) }
-                oval(c, b.x, b.y, 16.0, 16.0, "293E3D")
-                line(c, b.x - 5, b.y - 5, b.x + 5, b.y + 5, tint, 3f)
-                line(c, b.x + 5, b.y - 5, b.x - 5, b.y + 5, tint, 3f)
-                continue
-            }
             val speed = hypot(b.vx, b.vy).coerceAtLeast(1.0)
             val tx = b.x - b.vx / speed * 34
             val ty = b.y - b.vy / speed * 34
@@ -257,17 +246,8 @@ class GameView(context: Context, val game: Game) : View(context) {
         c.drawText(text, x.toFloat(), (y - paint.ascent()).toFloat(), paint)
     }
     private fun pirateWarning(c: Canvas, e: Entity) {
-        if (e.warning <= 0 && !e.charging) return
-        if (e.pirateType == PirateType.RAMMER) {
-            paint.style = Paint.Style.FILL; paint.color = color("FF977B", .2)
-            c.drawRect((e.x - 43).toFloat(), (e.y + 60).toFloat(), (e.x + 43).toFloat(), max(e.y + 61, visibleBottom).toFloat(), paint)
-            var y = e.y + 100
-            while (y < visibleBottom) {
-                line(c, e.x - 14, y - 10, e.x, y + 4, "FFE4B9", 3f)
-                line(c, e.x, y + 4, e.x + 14, y - 10, "FFE4B9", 3f)
-                y += 65
-            }
-        } else if (e.pirateType == PirateType.SNIPER) {
+        if (e.warning <= 0) return
+        if (e.pirateType == PirateType.SNIPER) {
             paint.pathEffect = DashPathEffect(floatArrayOf(8f, 8f), 0f)
             line(c, e.x, e.y + 43, e.aimX, Game.PLAYER_Y, "FFB6AC", 3f)
             paint.pathEffect = null
@@ -289,10 +269,9 @@ class GameView(context: Context, val game: Game) : View(context) {
             paint.style = Paint.Style.FILL; paint.color = color(if (i < e.hp) e.pirateType.color else "526265")
             c.drawRect(x.toFloat(), (y + 20).toFloat(), (x + 7).toFloat(), (y + 26).toFloat(), paint)
         }
-        if (e.warning > 0 || e.charging) {
+        if (e.warning > 0) {
             val label = when (e.pirateType) {
                 PirateType.SNIPER -> "AIM LOCKED"
-                PirateType.RAMMER -> if (e.charging) "CHARGE!" else "BRACE!"
                 else -> if (e.attackStep % 2 == 0) "BURST INCOMING" else "SPREAD INCOMING"
             }
             paint.style = Paint.Style.FILL; paint.color = color("442F35")
@@ -321,9 +300,6 @@ class GameView(context: Context, val game: Game) : View(context) {
             line(c, -24.0, -20.0, 24.0, -20.0, "D9483B", 4f)
             if (type == PirateType.SCATTER || type == PirateType.BURST) for (gx in doubleArrayOf(-19.0, 19.0)) line(c, gx, -31.0, gx, -59.0, "29343B", 8f)
             if (type == PirateType.SNIPER) line(c, 0.0, -40.0, 0.0, -77.0, "29343B", 8f)
-            if (type == PirateType.RAMMER) polygon(c, doubleArrayOf(-18.0, -40.0, 0.0, -77.0, 18.0, -40.0), "C9C3A7", 2f)
-            if (type == PirateType.IRONCLAD) for (gx in doubleArrayOf(-27.0, 27.0)) line(c, gx, -26.0, gx, 30.0, "9AB6C3", 7f)
-            if (type == PirateType.MINELAYER) for (gx in doubleArrayOf(-20.0, 20.0)) { oval(c, gx, 34.0, 8.0, 9.0, "354E3C"); line(c, gx - 5, 34.0, gx + 5, 34.0, "C4D6A3", 2f) }
             if (type == PirateType.CAPTAIN) polygon(c, doubleArrayOf(-12.0, 30.0, -12.0, 42.0, -5.0, 36.0, 0.0, 46.0, 5.0, 36.0, 12.0, 42.0, 12.0, 30.0), "F3C75F", 1f)
             // The pirate frame is rotated 180°, so "up" on screen is +y here.
             line(c, -9.0, -16.0, 9.0, -10.0, "FFF6E0", 2.5f)
@@ -380,7 +356,6 @@ class GameView(context: Context, val game: Game) : View(context) {
                     val target = game.entities.filter { it.kind == Kind.PIRATE && !it.dead && abs(it.x - x) < 65 && abs(it.y - y) < 75 }
                         .minByOrNull { hypot(it.x - x, it.y - y) }
                     if (target != null) game.fire(target)
-                    else game.bullets.firstOrNull { it.mine && !it.dead && abs(it.x - x) < 30 && abs(it.y - y) < 30 }?.let { game.fireAt(it.x, it.y) }
                     performClick()
                 }
             }

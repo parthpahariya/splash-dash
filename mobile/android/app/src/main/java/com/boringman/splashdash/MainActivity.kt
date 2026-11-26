@@ -500,11 +500,11 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         updateHUD()
         val rules = listOf(
             listOf("swipe", Clay.mint, "Steer", "Swipe left or right across the water to change lanes. Screen-reader actions on the waterway also let you steer and jump."),
-            listOf("scope", Clay.gold, "Fire", "Hold Fire to shoot ahead. Tap a pirate or mine to aim across lanes. Each hit removes one health pip; tougher ships earn more points."),
-            listOf("arrow.up", Clay.gold, "Jump", "Swipe up any time to jump over rocks for 1.15 seconds. You can't change lanes in the air, and ships, cannonballs and mines still hit you. Jumps never run out: after landing, you can jump again two seconds later."),
-            listOf("heart", Clay.heart, "Hull", "Hearts repair 10 hull. Rocks cost 25 hull; cannonballs cost 15, or 25 for heavy and sniper shots. Mines cost 25, ships 30, and charging Rammers 40."),
-            listOf("flag", Clay.gold, "Pirate fleet", "Scout 1 hull · Gunner 2 · Burst Raider 3 · Scattershot 3 · Sharpshooter 2 · Rammer 4 · Minelayer 3 · Ironclad 6 · Captain 10. New types arrive as levels increase."),
-            listOf("warning", Clay.danger, "Read the attack", "Dodge aimed shots and three-shot bursts, find gaps in spreads, and use long reloads to attack. A Sharpshooter marks its aim before firing; move after the lock. Rammers warn before charging. Shoot mines to clear a path. Captains alternate bursts and spreads and attack faster at half health."),
+            listOf("scope", Clay.gold, "Fire", "Hold Fire to shoot ahead. Tap a pirate to aim across lanes. Each hit removes one health pip; tougher ships earn more points."),
+            listOf("arrow.up", Clay.gold, "Jump", "Swipe up any time to jump over rocks for 1.15 seconds. You can't change lanes in the air, and ships and cannonballs still hit you. Jumps never run out: after landing, you can jump again two seconds later."),
+            listOf("heart", Clay.heart, "Hull", "Hearts repair 10 hull. Rocks cost 25 hull; cannonballs cost 15, or 25 for Sharpshooter shots. Ramming a ship costs 30."),
+            listOf("flag", Clay.gold, "Pirate fleet", "Scout 1 hull · Gunner 2 · Burst Raider 3 · Scattershot 3 · Sharpshooter 2 · Captain 10. New types arrive as levels increase."),
+            listOf("warning", Clay.danger, "Read the attack", "Dodge aimed shots and three-shot bursts, find gaps in spreads, and use long reloads to attack. A Sharpshooter marks its aim before firing; move after the lock. Captains alternate bursts and spreads and attack faster at half health."),
             listOf("wind", Clay.mint, "Levels", "Every 300 meters the water gets faster. Pause is at the top left; sound and help are in the pause menu."),
         )
         val dialog = Dialog(this, android.R.style.Theme_Material_NoActionBar)

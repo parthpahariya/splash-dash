@@ -146,9 +146,6 @@ class GameTest {
         assertEquals("cannonballs still hit mid-air", 85, shot.health); assertTrue(b.dead)
         val ship = game(); ship.spawn(Kind.PIRATE, 1, Game.PLAYER_Y); assertTrue(ship.jump()); ship.update(0.0)
         assertEquals("ships still hit mid-air", 70, ship.health)
-        val mined = game(); assertTrue(mined.jump())
-        mined.bullets.add(Bullet(mined.x, Game.PLAYER_Y, 0.0, 0.0, true, 25, true).apply { armTime = 0.0 }); mined.update(0.0)
-        assertEquals("mines still hit mid-air", 75, mined.health)
     }
     @Test fun pauseFreezesAndReleasesFire() {
         val g = game(); g.firing = true; g.pause(); g.update(1.0)
@@ -188,7 +185,7 @@ class GameTest {
     }
     private fun advance(g: Game, seconds: Double) { repeat(kotlin.math.ceil(seconds / .01).toInt()) { g.update(.01) } }
     @Test fun allPirateHealthAndSinkRewards() {
-        assertEquals(listOf(1,2,3,3,2,4,3,6,10), PirateType.values().map { it.health })
+        assertEquals(listOf(1,2,3,3,2,10), PirateType.values().map { it.health })
         for (type in PirateType.values()) {
             val g = game(); val e = g.spawn(Kind.PIRATE, 1, 300.0, type)!!
             assertEquals(type.health, e.hp)
@@ -228,34 +225,7 @@ class GameTest {
         assertEquals(480.0, kotlin.math.hypot(shot.vx, shot.vy), .001)
         assertEquals(aim, shot.x+shot.vx*(Game.PLAYER_Y-shot.y)/shot.vy, .001)
     }
-    @Test fun rammerWarnsChargesInLaneAndKeepsSpacing() {
-        val g = game(); val e = g.spawn(Kind.PIRATE, 0, 150.0, PirateType.RAMMER)!!
-        e.cooldown = 0.0; g.update(.01); assertEquals(.9, e.warning, .001); assertFalse(e.charging)
-        advance(g, .91); assertTrue(e.charging); assertTrue(g.bullets.isEmpty())
-        val y = e.y; advance(g, .1); assertTrue(e.y-y > g.speed*.2); assertEquals(Game.LANES[0], e.x, .001)
-        e.y = Game.PLAYER_Y; g.lane = 0; g.x = e.x; g.update(0.0); assertEquals(60, g.health)
-        for (kind in listOf(Kind.ROCK, Kind.HEART)) {
-            val spaced = game(); val obstacle = spaced.spawn(kind, 0, 350.0)!!
-            val rammer = spaced.spawn(Kind.PIRATE, 0, 150.0, PirateType.RAMMER)!!
-            rammer.charging = true; advance(spaced, 1.0); assertTrue(obstacle.y-rammer.y >= 120)
-        }
-    }
-    @Test fun minesArmBeforeDamageAndCanBeShot() {
-        val g = game(); val e = g.spawn(Kind.PIRATE, 0, 150.0, PirateType.MINELAYER)!!
-        e.cooldown = 0.0; g.update(.01); val mine = g.bullets[0]
-        assertTrue(mine.mine && mine.armTime > 0); assertTrue(g.fireAt(mine.x, mine.y))
-        g.bullets.removeAll { it !== mine }; g.entities.clear()
-        mine.x = g.x; mine.y = Game.PLAYER_Y-90
-        advance(g, .3); assertEquals(100, g.health); advance(g, .5); assertEquals(75, g.health)
-        val clear = game(); val layer = clear.spawn(Kind.PIRATE, 0, 150.0, PirateType.MINELAYER)!!
-        layer.cooldown = 0.0; clear.update(.01); val target = clear.bullets[0]
-        clear.bullets.add(Bullet(target.x, target.y, 0.0, 0.0, false)); clear.update(0.0)
-        assertTrue(target.dead); assertEquals(0, clear.piratesSunk)
-    }
-    @Test fun ironcladHeavyPairAndCaptainPhases() {
-        val g = game(); val iron = g.spawn(Kind.PIRATE, 0, 150.0, PirateType.IRONCLAD)!!
-        iron.cooldown = 0.0; g.update(.01); assertEquals(2, g.bullets.size); assertEquals(4.0, iron.cooldown, .001)
-        for (shot in g.bullets) { assertEquals(25, shot.damage); assertEquals(190.0, kotlin.math.hypot(shot.vx, shot.vy), .001) }
+    @Test fun captainPhases() {
         val boss = game(); val captain = boss.spawn(Kind.PIRATE, 0, 150.0, PirateType.CAPTAIN)!!
         captain.cooldown = 0.0; boss.update(.01); assertEquals(.65, captain.warning, .001)
         advance(boss, .66); assertEquals(2, captain.burstLeft); advance(boss, .4); assertEquals(3, boss.bullets.size)
@@ -267,12 +237,10 @@ class GameTest {
         e.cooldown = 0.0; g.update(.01); g.pause(); advance(g, 2.0); assertEquals(1.1, e.warning, .001)
         g.pause(); e.hp = 1; g.bullets.add(Bullet(e.x, e.y, 0.0, 0.0, false)); g.update(0.0)
         advance(g, 1.2); assertTrue(g.bullets.isEmpty())
-        for (type in listOf(PirateType.BURST, PirateType.MINELAYER)) {
-            val paused = game(); val p = paused.spawn(Kind.PIRATE, 0, 150.0, type)!!
-            p.cooldown = 0.0; paused.update(.01); val timer = p.burstTimer; val arm = paused.bullets[0].armTime
-            paused.pause(); advance(paused, 1.0)
-            assertEquals(timer, p.burstTimer, .001); assertEquals(arm, paused.bullets[0].armTime, .001)
-        }
+        val paused = game(); val p = paused.spawn(Kind.PIRATE, 0, 150.0, PirateType.BURST)!!
+        p.cooldown = 0.0; paused.update(.01); val timer = p.burstTimer
+        paused.pause(); advance(paused, 1.0)
+        assertEquals(timer, p.burstTimer, .001); assertEquals(1, paused.bullets.size)
     }
 
     @Test fun fasterPiratesCannotCatchCaptain() {
@@ -281,18 +249,6 @@ class GameTest {
         val gunner = g.spawn(Kind.PIRATE, 0, 200.0, PirateType.GUNNER)!!
         assertTrue(captain.y - gunner.y >= Game.PIRATE_GAP)
         advance(g, 2.0); assertTrue(captain.y - gunner.y >= Game.PIRATE_GAP)
-    }
-    @Test fun rammersCannotShareLaneWithAnyLivePirate() {
-        for (type in PirateType.values()) {
-            for ((first, second) in listOf(type to PirateType.RAMMER, PirateType.RAMMER to type)) {
-                val g = game(); val existing = g.spawn(Kind.PIRATE, 0, 500.0, first)!!
-                assertNull(g.spawn(Kind.PIRATE, 0, -80.0, second))
-                assertEquals(1, g.entities.size)
-                assertNotNull(g.spawn(Kind.PIRATE, 1, -80.0, second))
-                existing.dead = true
-                assertNotNull(g.spawn(Kind.PIRATE, 0, -80.0, second))
-            }
-        }
     }
     @Test fun pendingAttacksFinishWhenShipPassesPlayerApproach() {
         for (type in listOf(PirateType.SNIPER, PirateType.BURST)) {

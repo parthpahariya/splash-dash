@@ -9,7 +9,7 @@ and the same features**. A player switching phones should not notice a differenc
 Every change to one app must be made to the other in the same change, including:
 
 - **Gameplay rules:** `Game.kt` ↔ `Game.swift`. Keep constants, timers, spawning, damage, scoring,
-  jumps and pirate behaviour identical. Both mirror `src/engine.js`.
+  jumps and pirate behaviour identical.
 - **Game artwork:** `GameView.kt` ↔ `GameSurface.swift`. Keep the same shapes, colours, layering
   and animation, in the same 800-unit world coordinates.
 - **Screens and controls:** `MainActivity.kt` ↔ `WakeRunnerApp.swift`. This covers the HUD

@@ -1,10 +1,10 @@
 import Foundation
 
-// Pure Swift simulation. Coordinates and gameplay rules mirror src/engine.js.
+// Pure Swift simulation. Coordinates and gameplay rules match Game.kt on Android.
 enum GameStatus { case ready, playing, paused, over }
 enum EntityKind { case rock, pirate, heart }
 enum PirateType: CaseIterable {
-  case scout, gunner, burst, scatter, sniper, rammer, minelayer, ironclad, captain
+  case scout, gunner, burst, scatter, sniper, captain
   var stats: (name: String, hp: Int, color: String, unlock: Int, reward: Int) {
     switch self {
     case .scout: return ("Scout", 1, "E9CF80", 1, 125)
@@ -12,9 +12,6 @@ enum PirateType: CaseIterable {
     case .burst: return ("Burst Raider", 3, "B990D4", 2, 350)
     case .scatter: return ("Scattershot", 3, "E69A53", 2, 350)
     case .sniper: return ("Sharpshooter", 2, "DF6472", 3, 300)
-    case .rammer: return ("Rammer", 4, "C6403E", 3, 400)
-    case .minelayer: return ("Minelayer", 3, "86B879", 3, 350)
-    case .ironclad: return ("Ironclad", 6, "9AB6C3", 4, 600)
     case .captain: return ("Pirate Captain", 10, "F3C75F", 5, 1500)
     }
   }
@@ -30,7 +27,6 @@ final class Entity {
   var maxHp: Int { pirateType.stats.hp }
   var hp: Int
   var warning = 0.0
-  var charging = false
   var burstLeft = 0
   var burstTimer = 0.0
   var attackStep = 0
@@ -55,14 +51,10 @@ final class Bullet {
   let vy: Double
   let enemy: Bool
   let damage: Int
-  let mine: Bool
-  var armTime: Double
-  var radius: Double { mine ? 18 : damage > 15 ? 11 : 8 }
+  var radius: Double { damage > 15 ? 11 : 8 }
   var dead = false
-  init(x: Double, y: Double, vx: Double, vy: Double, enemy: Bool, damage: Int = 15, mine: Bool = false) {
+  init(x: Double, y: Double, vx: Double, vy: Double, enemy: Bool, damage: Int = 15) {
     self.damage = damage
-    self.mine = mine
-    self.armTime = mine ? 0.8 : 0
     self.x = x
     self.y = y
     self.vx = vx
@@ -220,7 +212,7 @@ final class Game {
     }
   }
   @discardableResult func damage(_ amount: Int) -> Bool {
-    // Jumping only clears rocks (see update); ships, cannonballs and mines still hit mid-air.
+    // Jumping only clears rocks (see update); ships and cannonballs still hit mid-air.
     guard status == .playing, invincible <= 0 else { return false }
     health = max(0, health - amount)
     invincible = 1.15
@@ -273,8 +265,6 @@ final class Game {
     }
     let neighbors = entities.filter { !$0.dead && $0.lane == lane }
     if kind == .pirate {
-      // Rammers need the lane to themselves, regardless of spawn order.
-      if neighbors.contains(where: { $0.kind == .pirate && (pirateType == .rammer || $0.pirateType == .rammer) }) { return nil }
       for e in neighbors where e.kind == .rock || e.kind == .heart { y = min(y, e.y - 120) }
     }
     for e in neighbors.sorted(by: { $0.y > $1.y }) {
@@ -297,8 +287,8 @@ final class Game {
     }
     return pool[min(pool.count - 1, Int(random() * Double(pool.count)))]
   }
-  private func enemyShot(_ e: Entity, angle: Double = 0, velocity: Double? = nil, damage: Int = 15, offset: Double = 0, targetX: Double? = nil) {
-    let shotX = e.x + offset, shotY = e.y + 43
+  private func enemyShot(_ e: Entity, angle: Double = 0, velocity: Double? = nil, damage: Int = 15, targetX: Double? = nil) {
+    let shotX = e.x, shotY = e.y + 43
     let direction = atan2(Self.playerY - shotY, (targetX ?? x) - shotX) + angle
     let v = velocity ?? Double(265 + level * 8)
     bullets.append(Bullet(x: shotX, y: shotY, vx: cos(direction) * v, vy: sin(direction) * v, enemy: true, damage: damage))
@@ -306,7 +296,6 @@ final class Game {
     onEvent("enemyFire")
   }
   private func updatePirate(_ e: Entity, _ dt: Double) {
-    if e.charging { return }
     if e.burstLeft > 0 {
       e.burstTimer -= dt
       if e.burstTimer <= 0 { enemyShot(e); e.burstLeft -= 1; e.burstTimer = 0.18 }
@@ -316,7 +305,6 @@ final class Game {
       e.warning = max(0, e.warning - dt)
       if e.warning > 0 { return }
       switch e.pirateType {
-      case .rammer: e.charging = true; return
       case .sniper: enemyShot(e, velocity: 480, damage: 25, targetX: e.aimX); e.cooldown = 3.4; return
       case .captain:
         if e.attackStep % 2 == 0 { enemyShot(e); e.burstLeft = 2; e.burstTimer = 0.18 }
@@ -331,21 +319,11 @@ final class Game {
     if e.cooldown > 0 { return }
     switch e.pirateType {
     case .sniper: e.aimX = x; e.warning = 1.1
-    case .rammer: if e.y < Self.playerY - 220 { e.warning = 0.9 }
     case .captain: e.aimX = x; e.warning = 0.65
-    case .minelayer:
-      if e.y < Self.playerY - 200 {
-        bullets.append(Bullet(x: e.x, y: e.y + 80, vx: 0, vy: speed, enemy: true, damage: 25, mine: true))
-        e.flash = 0.12; onEvent("enemyFire")
-      }
-      e.cooldown = 2.8
     case .scatter:
       for angle in [-0.26, 0, 0.26] { enemyShot(e, angle: angle) }
       e.cooldown = 3.2
     case .burst: enemyShot(e); e.burstLeft = 2; e.burstTimer = 0.18; e.cooldown = 3.2
-    case .ironclad:
-      for offset in [-14.0, 14.0] { enemyShot(e, velocity: 190, damage: 25, offset: offset) }
-      e.cooldown = 4
     case .scout: enemyShot(e); e.cooldown = 1.4
     case .gunner: enemyShot(e); e.cooldown = max(1.1, 2.6 - Double(level) * 0.1)
     }
@@ -386,11 +364,10 @@ final class Game {
       pirateTimer = max(3, 7 - Double(level) * 0.35) + random() * 2
     }
     for e in entities {
-      var nextY = e.y + speed * dt * (e.kind == .pirate ? (e.charging ? 2.8 : e.pirateType == .captain ? 0.32 : 0.44) : 1)
+      var nextY = e.y + speed * dt * (e.kind == .pirate ? (e.pirateType == .captain ? 0.32 : 0.44) : 1)
       if e.kind == .pirate {
-        for ahead in entities where !ahead.dead && ahead.lane == e.lane && ahead.y > e.y {
-          if ahead.kind == .pirate { nextY = min(nextY, ahead.y - Self.pirateGap) }
-          else if e.charging { nextY = min(nextY, ahead.y - 120) }
+        for ahead in entities where !ahead.dead && ahead.kind == .pirate && ahead.lane == e.lane && ahead.y > e.y {
+          nextY = min(nextY, ahead.y - Self.pirateGap)
         }
       }
       e.y = max(e.y, nextY)
@@ -407,7 +384,7 @@ final class Game {
           e.dead = true
           onEvent("heart")
         case .rock: if !jumping && damage(25) { e.dead = true }  // the boat sails over rocks
-        case .pirate: if damage(e.pirateType == .rammer && e.charging ? 40 : 30) { e.dead = true }
+        case .pirate: if damage(30) { e.dead = true }
         }
         if status == .over { return }
       }
@@ -415,19 +392,15 @@ final class Game {
     }
     for b in bullets {
       if b.dead { continue }
-      if b.mine { b.armTime = max(0, b.armTime - dt) }
       b.x += b.vx * dt
       b.y += b.vy * dt
       if b.enemy {
-        if b.armTime <= 0 && abs(b.x - x) < 20 + b.radius && abs(b.y - Self.playerY) < 34 + b.radius {
+        if abs(b.x - x) < 20 + b.radius && abs(b.y - Self.playerY) < 34 + b.radius {
           damage(b.damage)
           b.dead = true
           if status == .over { return }
         }
       } else {
-        if let mine = bullets.first(where: { $0.mine && !$0.dead && abs($0.x - b.x) < 24 && abs($0.y - b.y) < 24 }) {
-          mine.dead = true; b.dead = true; onEvent("hit"); continue
-        }
         for e in entities {
           if e.kind != .pirate || e.dead || abs(e.x - b.x) > 34 || abs(e.y - b.y) > 52 { continue }
           e.hp -= 1

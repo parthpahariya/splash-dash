@@ -1,65 +1,13 @@
 # Wake Runner
 
-A responsive, top-down four-lane boat arcade game, built with Canvas 2D and vanilla JavaScript. No runtime dependencies.
+A top-down, four-lane boat arcade game for **Android** (Kotlin) and **iPhone and iPad** (Swift).
+Steer between lanes, jump over rocks, and sink pirate ships with your cannon.
 
-Native mobile editions are in [`mobile/`](mobile/README.md): **Kotlin for Android** and **Swift for iPhone and iPad**, with offline gameplay, touch controls, and platform-specific build instructions.
+The apps, build instructions and gameplay details are in [`mobile/`](mobile/README.md).
+Release guides: [Android](docs/android-release.md) and [iOS](docs/ios-release.md).
+Both apps must keep the same UI and features; see [`AGENTS.md`](AGENTS.md).
 
-## Run locally
+## Quick start
 
-Requires Node.js 20 or later.
-
-```sh
-npm run dev
-```
-
-Open http://localhost:5173. Run `npm run build` for the static `dist/` build, or `npm start -- --dist` to serve it. Run `npm test` for gameplay tests.
-
-## Controls
-
-| Action | Keys |
-| --- | --- |
-| Steer between four lanes | Left / Right or A / D |
-| Fire cannon (hold for continuous fire) | Space |
-| Aim and fire at a pirate | Click / tap the pirate ship |
-| Jump | Up Arrow |
-| Pause / resume | P or Escape |
-| Start / retry | Enter |
-
-Touch controls are below the game; swipe across the water to steer, or hold Fire to keep shooting. Sound is optional and defaults to off. Runs pause when the tab loses focus. Your personal best and sound preference are saved in this browser when local storage is available.
-
-The camera stays steady during collisions. Background and effect animations freeze when paused or at game over.
-
-On phones, the game fits the available screen height with large touch controls, a compact score strip, and support for notches and home indicators. Landscape moves the controls beside the water. Tablets and desktops retain the wider layout and keyboard hints.
-
-## Rules
-
-- Start with 100 hull health and two jumps.
-- Rocks deal 25 damage, normal cannonballs 15, heavy/sniper shots and mines 25, ship collisions 30, and charging Rammers 40.
-- Pirates use the nine attack patterns listed below. Change lanes, exploit reload windows, destroy mines, or jump over incoming hazards.
-- Cannon launches flash and leave a visible trail. During a jump, cannonballs pass underneath the raised boat and continue offscreen without dealing damage.
-- Damage gives a short grace period so one collision cannot drain the whole hull.
-- Hearts restore 10 health, up to 100, and award 50 points.
-- Each voyage has two jumps. Jumps last 1.15 seconds and clear hazards; pickups do not replenish jump charges.
-- Hearts stay separated from each other and from rocks. A pickup can appear above a rock in the same lane, with a clear gap.
-- Pirate ships never overlap rocks: rocks use lanes without pirates, and new pirates enter above existing rocks with a safe gap that grows as they scroll.
-- Each player cannon hit removes one pirate health point. Ships show type labels and health pips; Captains have a health bar. Sinking rewards vary by type.
-- Click or tap a pirate ship or mine to aim a shot at it from any lane. Shots travel in a straight line; swiping across a pirate still steers instead of firing.
-- Sail for two points per meter. The game speeds up every 300 meters.
-
-The game engine is independent of rendering in `src/engine.js`, with deterministic tests in `tests/engine.test.mjs`. The illustrated water, boats, islands, pickups, and effects are drawn in Canvas; no image files or network assets are needed for gameplay. Google Fonts are optional and have local fallbacks.
-
-## Pirate fleet
-
-| Pirate | Health | Attack | Unlock level | Sink points |
-| --- | ---: | --- | ---: | ---: |
-| Scout | 1 | Frequent single aimed shots | 1 | 125 |
-| Gunner | 2 | Standard aimed cannonball | 1 | 250 |
-| Burst Raider | 3 | Three aimed shots, 0.18 seconds apart, then a long reload | 2 | 350 |
-| Scattershot | 3 | Three-shot fan with a slow reload | 2 | 350 |
-| Sharpshooter | 2 | Locks your position for 1.1 seconds, then fires a fast 25-damage shot | 3 | 300 |
-| Rammer | 4 | Warns for 0.9 seconds, then charges straight down its lane | 3 | 400 |
-| Minelayer | 3 | Drops 25-damage mines that arm after 0.8 seconds and can be shot | 3 | 350 |
-| Ironclad | 6 | Paired slow, heavy 25-damage shots with a four-second reload | 4 | 600 |
-| Pirate Captain | 10 | Warned alternating bursts and spreads; shorter reload at half health | 5 | 1,500 |
-
-Automatic encounters favor Scouts and Gunners early on. Captains are rare, never spawn together, and require 900 meters between appearances. Ships keep 220 units apart in the same lane so health labels and attack warnings stay readable. Rammers never share a lane with another live pirate: a Rammer cannot spawn in an occupied pirate lane, and other pirates cannot spawn in its lane until it sinks or leaves. Rammers stay in their lane and maintain a safe gap behind rocks and hearts. Each platform uses this roster while preserving its existing jump and viewport rules.
+- Android: `cd mobile/android && ./gradlew :app:testDebugUnitTest :app:assembleDebug` (JDK 17).
+- iPhone: `make ios-device` installs and launches the app on a connected iPhone.

@@ -1,6 +1,6 @@
 # Wake Runner for Android and iOS
 
-Two independent native apps port the browser game's four-lane simulation:
+Two native apps share the same four-lane simulation, UI and features:
 
 | Platform | Language and UI | Minimum version | Project |
 | --- | --- | --- | --- |
@@ -76,7 +76,7 @@ For distribution, configure your signing team, choose a device destination, and 
 
 ## Gameplay and architecture
 
-`android/app/src/main/java/com/boringman/splashdash/Game.kt` and `ios/WakeRunner/Game.swift` contain platform-independent simulation code. Both use the browser engine's 800-unit coordinate system, collision thresholds, timings, damage, scoring, spawn spacing, and speed curve. Random spawning can differ between platforms. Platform renderers supply artwork, touch input, and native UI; Android uses Choreographer and iOS uses CADisplayLink for frame timing. Cosmetic effects and audio differ from the browser version.
+`android/app/src/main/java/com/boringman/splashdash/Game.kt` and `ios/WakeRunner/Game.swift` contain platform-independent simulation code. Both use the same 800-unit coordinate system, collision thresholds, timings, damage, scoring, spawn spacing, and speed curve. Random spawning can differ between platforms. Platform renderers supply artwork, touch input, and native UI; Android uses Choreographer and iOS uses CADisplayLink for frame timing.
 
 Native engine tests cover steering, damage grace and jump protection, heart healing without jump replenishment, automatic heart spawning, two-hit sinking, targeted fire, aimed enemy shots, airborne cannonball avoidance, pausing, lethal-frame ordering, levels/reset, spawn spacing, and a seeded ten-minute run checking object separation. iOS also has interaction tests for starting, steering, jumping, held fire, pausing, backgrounding, help, and landscape controls. These do not replace playtesting on physical devices or establish that the real-time visual game is fully playable with a screen reader.
 

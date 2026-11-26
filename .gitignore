@@ -1,7 +1,6 @@
-node_modules/
+# Local CI build output (mobile .apk/.aab/.ipa)
 dist/
 .DS_Store
-test-results/
 
 # Native mobile build output and machine-specific settings
 **/.gradle/

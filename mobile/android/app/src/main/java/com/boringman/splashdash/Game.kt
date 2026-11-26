@@ -10,9 +10,6 @@ enum class PirateType(val title: String, val health: Int, val color: String, val
     BURST("Burst Raider", 3, "#B990D4", 2, 350),
     SCATTER("Scattershot", 3, "#E69A53", 2, 350),
     SNIPER("Sharpshooter", 2, "#DF6472", 3, 300),
-    RAMMER("Rammer", 4, "#C6403E", 3, 400),
-    MINELAYER("Minelayer", 3, "#86B879", 3, 350),
-    IRONCLAD("Ironclad", 6, "#9AB6C3", 4, 600),
     CAPTAIN("Pirate Captain", 10, "#F3C75F", 5, 1500)
 }
 class Entity(val id: Int, val kind: Kind, val lane: Int, var y: Double, var cooldown: Double, val pirateType: PirateType = PirateType.GUNNER) {
@@ -20,7 +17,6 @@ class Entity(val id: Int, val kind: Kind, val lane: Int, var y: Double, var cool
     val maxHp get() = pirateType.health
     var hp = maxHp
     var warning = 0.0
-    var charging = false
     var burstLeft = 0
     var burstTimer = 0.0
     var attackStep = 0
@@ -29,13 +25,12 @@ class Entity(val id: Int, val kind: Kind, val lane: Int, var y: Double, var cool
     var hit = 0.0
     var flash = 0.0
 }
-class Bullet(var x: Double, var y: Double, val vx: Double, val vy: Double, val enemy: Boolean, val damage: Int = 15, val mine: Boolean = false) {
-    var armTime = if (mine) .8 else 0.0
-    val radius get() = if (mine) 18.0 else if (damage > 15) 11.0 else 8.0
+class Bullet(var x: Double, var y: Double, val vx: Double, val vy: Double, val enemy: Boolean, val damage: Int = 15) {
+    val radius get() = if (damage > 15) 11.0 else 8.0
     var dead = false
 }
 
-/** Pure Kotlin simulation. Coordinates and rules match src/engine.js. */
+/** Pure Kotlin simulation. Coordinates and rules match Game.swift on iOS. */
 class Game(private val random: () -> Double = { Math.random() }, var onEvent: (String) -> Unit = {}) {
     companion object {
         val LANES = doubleArrayOf(211.0, 337.0, 463.0, 589.0)
@@ -161,7 +156,7 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
         }
     }
     fun damage(amount: Int): Boolean {
-        // Jumping only clears rocks (see update); ships, cannonballs and mines still hit mid-air.
+        // Jumping only clears rocks (see update); ships and cannonballs still hit mid-air.
         if (status != Status.PLAYING || invincible > 0) return false
         health = max(0, health - amount); invincible = 1.15; onEvent("damage")
         if (health == 0) { status = Status.OVER; firing = false; onEvent("over") }
@@ -190,8 +185,6 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
         }) return null
         val neighbors = entities.filter { !it.dead && it.lane == lane }
         if (kind == Kind.PIRATE) {
-            // Rammers need the lane to themselves, regardless of spawn order.
-            if (neighbors.any { it.kind == Kind.PIRATE && (pirateType == PirateType.RAMMER || it.pirateType == PirateType.RAMMER) }) return null
             for (e in neighbors) {
                 if (e.kind == Kind.ROCK || e.kind == Kind.HEART) y = min(y, e.y - 120)
             }
@@ -215,14 +208,13 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
         }
         return pool[(random() * pool.size).toInt().coerceAtMost(pool.lastIndex)]
     }
-    private fun enemyShot(e: Entity, angle: Double = 0.0, velocity: Double = 265.0 + level * 8, damage: Int = 15, offset: Double = 0.0, targetX: Double = x) {
-        val shotX = e.x + offset; val shotY = e.y + 43
+    private fun enemyShot(e: Entity, angle: Double = 0.0, velocity: Double = 265.0 + level * 8, damage: Int = 15, targetX: Double = x) {
+        val shotX = e.x; val shotY = e.y + 43
         val direction = atan2(PLAYER_Y - shotY, targetX - shotX) + angle
         bullets.add(Bullet(shotX, shotY, cos(direction) * velocity, sin(direction) * velocity, true, damage))
         e.flash = .12; onEvent("enemyFire")
     }
     private fun updatePirate(e: Entity, dt: Double) {
-        if (e.charging) return
         if (e.burstLeft > 0) {
             e.burstTimer -= dt
             if (e.burstTimer <= 0) { enemyShot(e); e.burstLeft--; e.burstTimer = .18 }
@@ -232,7 +224,6 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
             e.warning = max(0.0, e.warning - dt)
             if (e.warning > 0) return
             when (e.pirateType) {
-                PirateType.RAMMER -> { e.charging = true; return }
                 PirateType.SNIPER -> { enemyShot(e, velocity = 480.0, damage = 25, targetX = e.aimX); e.cooldown = 3.4; return }
                 PirateType.CAPTAIN -> {
                     if (e.attackStep % 2 == 0) { enemyShot(e); e.burstLeft = 2; e.burstTimer = .18 }
@@ -246,15 +237,9 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
         if (e.cooldown > 0) return
         when (e.pirateType) {
             PirateType.SNIPER -> { e.aimX = x; e.warning = 1.1 }
-            PirateType.RAMMER -> if (e.y < PLAYER_Y - 220) e.warning = .9
             PirateType.CAPTAIN -> { e.aimX = x; e.warning = .65 }
-            PirateType.MINELAYER -> {
-                if (e.y < PLAYER_Y - 200) { bullets.add(Bullet(e.x, e.y + 80, 0.0, speed, true, 25, true)); e.flash = .12; onEvent("enemyFire") }
-                e.cooldown = 2.8
-            }
             PirateType.SCATTER -> { for (angle in listOf(-.26, 0.0, .26)) enemyShot(e, angle = angle); e.cooldown = 3.2 }
             PirateType.BURST -> { enemyShot(e); e.burstLeft = 2; e.burstTimer = .18; e.cooldown = 3.2 }
-            PirateType.IRONCLAD -> { for (offset in listOf(-14.0, 14.0)) enemyShot(e, velocity = 190.0, damage = 25, offset = offset); e.cooldown = 4.0 }
             PirateType.SCOUT -> { enemyShot(e); e.cooldown = 1.4 }
             PirateType.GUNNER -> { enemyShot(e); e.cooldown = max(1.1, 2.6 - level * .1) }
         }
@@ -277,11 +262,10 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
         if (pickupTimer <= 0) { if (random() < .58) spawn(Kind.HEART); pickupTimer = 10 + random() * 5 } // a new heart chance every 10–15 s
         if (pirateTimer <= 0) { val type = choosePirate(); if (spawn(Kind.PIRATE, pirateType = type) != null && type == PirateType.CAPTAIN) lastCaptainDistance = distance; pirateTimer = max(3.0, 7 - level * .35) + random() * 2 }
         for (e in entities) {
-            var nextY = e.y + speed * dt * (if (e.kind == Kind.PIRATE) (if (e.charging) 2.8 else if (e.pirateType == PirateType.CAPTAIN) .32 else .44) else 1.0)
+            var nextY = e.y + speed * dt * (if (e.kind == Kind.PIRATE) (if (e.pirateType == PirateType.CAPTAIN) .32 else .44) else 1.0)
             if (e.kind == Kind.PIRATE) for (ahead in entities) {
-                if (ahead.dead || ahead.lane != e.lane || ahead.y <= e.y) continue
-                if (ahead.kind == Kind.PIRATE) nextY = min(nextY, ahead.y - PIRATE_GAP)
-                else if (e.charging) nextY = min(nextY, ahead.y - 120)
+                if (ahead.dead || ahead.kind != Kind.PIRATE || ahead.lane != e.lane || ahead.y <= e.y) continue
+                nextY = min(nextY, ahead.y - PIRATE_GAP)
             }
             e.y = max(e.y, nextY)
             e.hit = max(0.0, e.hit - dt); e.flash = max(0.0, e.flash - dt)
@@ -291,7 +275,7 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
                 when (e.kind) {
                     Kind.HEART -> { health = min(100, health + 10); heartsCollected++; bonus += 50; e.dead = true; onEvent("heart") }
                     Kind.ROCK -> if (!jumping && damage(25)) e.dead = true // the boat sails over rocks
-                    Kind.PIRATE -> if (damage(if (e.pirateType == PirateType.RAMMER && e.charging) 40 else 30)) e.dead = true
+                    Kind.PIRATE -> if (damage(30)) e.dead = true
                 }
                 if (status == Status.OVER) return
             }
@@ -299,16 +283,13 @@ class Game(private val random: () -> Double = { Math.random() }, var onEvent: (S
         }
         for (b in bullets) {
             if (b.dead) continue
-            if (b.mine) b.armTime = max(0.0, b.armTime - dt)
             b.x += b.vx * dt; b.y += b.vy * dt
             if (b.enemy) {
-                if (b.armTime <= 0 && abs(b.x - x) < 20 + b.radius && abs(b.y - PLAYER_Y) < 34 + b.radius) {
+                if (abs(b.x - x) < 20 + b.radius && abs(b.y - PLAYER_Y) < 34 + b.radius) {
                     damage(b.damage); b.dead = true
                     if (status == Status.OVER) return
                 }
             } else {
-                val mine = bullets.firstOrNull { it.mine && !it.dead && abs(it.x - b.x) < 24 && abs(it.y - b.y) < 24 }
-                if (mine != null) { mine.dead = true; b.dead = true; onEvent("hit"); continue }
                 for (e in entities) {
                     if (e.kind != Kind.PIRATE || e.dead || abs(e.x - b.x) > 34 || abs(e.y - b.y) > 52) continue
                     e.hp--; e.hit = .13; b.dead = true
