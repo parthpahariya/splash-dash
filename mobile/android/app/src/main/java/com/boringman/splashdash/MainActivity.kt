@@ -119,16 +119,6 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
         val rightInset = if (landscape) dp(100) else 0
         val bottomInset = if (landscape) dp(16) else dp(112)
         val root = FrameLayout(this).apply { setBackgroundColor(Color.rgb(39, 127, 137)) }
-        if (android.os.Build.VERSION.SDK_INT >= 30) {
-            window.setDecorFitsSystemWindows(false)
-            window.insetsController?.let {
-                it.hide(WindowInsets.Type.statusBars())
-                it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            }
-        } else {
-            @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_FULLSCREEN
-        }
         water = GameView(this, game).apply {
             reducedMotion = Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
         }
@@ -238,7 +228,19 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             water.invalidate()
             insets
         }
-        setContentView(root); root.requestApplyInsets(); lastStatus = null; updateHUD()
+        setContentView(root)
+        // The window's insets controller only exists once the content view (and decor) is installed.
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            window.setDecorFitsSystemWindows(false)
+            window.insetsController?.let {
+                it.hide(WindowInsets.Type.statusBars())
+                it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_FULLSCREEN
+        }
+        root.requestApplyInsets(); lastStatus = null; updateHUD()
     }
     private fun updateHUD() {
         stats.text = "%,d".format(game.score)
