@@ -30,8 +30,6 @@ final class GameModel: ObservableObject {
   @Published var frame = 0
   @Published var best = UserDefaults.standard.integer(forKey: "wake-runner-best")
   @Published var sound = UserDefaults.standard.bool(forKey: "wake-runner-sound")
-  /// Treasures claimed by beating the Kraken, kept on this device.
-  @Published var treasures = UserDefaults.standard.integer(forKey: "wake-runner-treasures")
   @Published var notice: Notice?
   private var noticeUntil = 0.0
   private var displayLink: CADisplayLink?
@@ -114,8 +112,6 @@ final class GameModel: ObservableObject {
       frame &+= 1
     case "won":
       saveBest()
-      treasures += 1
-      UserDefaults.standard.set(treasures, forKey: "wake-runner-treasures")
       frame &+= 1
     default: break
     }
@@ -740,19 +736,10 @@ struct GameScreen: View {
   }
 
   private var bestChip: some View {
-    VStack(spacing: 6) {
-      Label {
-        Text("Personal best  \(scoreDigits(model.best))").monospacedDigit()
-      } icon: {
-        Image(systemName: symbol("trophy.fill")).foregroundStyle(Theme.gold)
-      }
-      if model.treasures > 0 {
-        Label {
-          Text("Treasures found  \(model.treasures)").monospacedDigit()
-        } icon: {
-          Image(systemName: "shippingbox.fill").foregroundStyle(Theme.gold)
-        }
-      }
+    Label {
+      Text("Personal best  \(scoreDigits(model.best))").monospacedDigit()
+    } icon: {
+      Image(systemName: symbol("trophy.fill")).foregroundStyle(Theme.gold)
     }
     .font(.subheadline.weight(.heavy))
     .foregroundStyle(Theme.creamMuted)
@@ -971,22 +958,19 @@ struct TreasureSequence: View {
     VStack(spacing: 18) {
       Spacer(minLength: 0)
       BottleArt().frame(height: 90).accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: 10) {
+      VStack(spacing: 14) {
         Text("“Dunk this ship in water.”")
           .font(.system(.title2, design: .serif).italic().weight(.bold))
+          .multilineTextAlignment(.center)
         Text("— Barbosa")
           .font(.system(.title3, design: .serif).italic())
           .frame(maxWidth: .infinity, alignment: .trailing)
       }
       .foregroundStyle(Theme.ink)
-      .padding(.horizontal, 20).padding(.vertical, 22)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(hex: "F6E7C1")))
-      .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.ink, lineWidth: 3))
-      .overlay(alignment: .topTrailing) {
-        Circle().fill(Color(hex: "D9483B")).frame(width: 30, height: 30)
-          .overlay(Circle().strokeBorder(Theme.ink, lineWidth: 2.5)).offset(x: 8, y: -12)
-      }
+      // Clear the rolled ends at the top and bottom, and the seal on the bottom roll.
+      .padding(.horizontal, 34).padding(.top, 40).padding(.bottom, 52)
+      .frame(maxWidth: .infinity)
+      .background(ScrollPaper())
       .accessibilityElement(children: .combine)
       .accessibilityLabel("The letter reads: Dunk this ship in water. Signed, Barbosa.")
       Spacer(minLength: 0)
@@ -995,6 +979,65 @@ struct TreasureSequence: View {
           .font(.title3.weight(.black)).frame(maxWidth: .infinity, minHeight: 60)
       }
       .buttonStyle(ClayButtonStyle(kind: .primary, radius: 22))
+    }
+  }
+}
+
+/// A paper scroll: a parchment sheet between two rolled ends with wooden rod caps, a few age
+/// marks, and a red wax seal with ribbon tails on the bottom roll. Matches ScrollDrawable on Android.
+private struct ScrollPaper: View {
+  var body: some View {
+    Canvas { ctx, size in
+      let w = size.width, h = size.height, roll = 26.0, inset = 12.0
+      let ink = Color(hex: "0B2530")
+      // The sheet, with gently waved sides.
+      var sheet = Path()
+      sheet.move(to: CGPoint(x: inset, y: roll / 2))
+      sheet.addLine(to: CGPoint(x: w - inset, y: roll / 2))
+      sheet.addQuadCurve(to: CGPoint(x: w - inset, y: h - roll / 2), control: CGPoint(x: w - inset + 5, y: h / 2))
+      sheet.addLine(to: CGPoint(x: inset, y: h - roll / 2))
+      sheet.addQuadCurve(to: CGPoint(x: inset, y: roll / 2), control: CGPoint(x: inset - 5, y: h / 2))
+      ctx.fill(sheet, with: .color(Color(hex: "F6E7C1")))
+      for (x, y, r) in [(0.22, 0.35, 16.0), (0.78, 0.62, 20.0), (0.4, 0.8, 12.0)] {
+        ctx.fill(Path(ellipseIn: CGRect(x: w * x - r, y: h * y - r * 0.7, width: r * 2, height: r * 1.4)),
+                 with: .color(Color(hex: "E8D29E").opacity(0.55)))
+      }
+      ctx.stroke(sheet, with: .color(ink), lineWidth: 3)
+      // Shadows cast by the rolls onto the sheet.
+      ctx.fill(Path(CGRect(x: inset + 2, y: roll - 2, width: w - inset * 2 - 4, height: 6)), with: .color(ink.opacity(0.12)))
+      ctx.fill(Path(CGRect(x: inset + 2, y: h - roll - 4, width: w - inset * 2 - 4, height: 6)), with: .color(ink.opacity(0.12)))
+      // The rolled ends, each with wooden rod caps.
+      for y in [0.0, h - roll] {
+        for cx in [3.0, w - 3] {
+          let cap = Path(roundedRect: CGRect(x: cx - 6, y: y + 3, width: 12, height: roll - 6), cornerRadius: 4)
+          ctx.fill(cap, with: .color(Color(hex: "9A6E48")))
+          ctx.stroke(cap, with: .color(ink), lineWidth: 2.5)
+        }
+        let rollPath = Path(roundedRect: CGRect(x: 6, y: y, width: w - 12, height: roll), cornerRadius: roll / 2)
+        ctx.fill(rollPath, with: .linearGradient(
+          Gradient(colors: [Color(hex: "F2E2B8"), Color(hex: "E0C68C")]),
+          startPoint: CGPoint(x: 0, y: y), endPoint: CGPoint(x: 0, y: y + roll)))
+        var curl = Path()
+        curl.move(to: CGPoint(x: 20, y: y + roll * 0.62)); curl.addLine(to: CGPoint(x: w - 20, y: y + roll * 0.62))
+        ctx.stroke(curl, with: .color(Color(hex: "C9AB6E")), lineWidth: 2)
+        ctx.stroke(rollPath, with: .color(ink), lineWidth: 3)
+      }
+      // Wax seal with ribbon tails on the bottom roll.
+      let sx = w / 2, sy = h - roll / 2 - 2
+      for dx in [-8.0, 8.0] {
+        var tail = Path()
+        tail.move(to: CGPoint(x: sx + dx * 0.4, y: sy))
+        tail.addLine(to: CGPoint(x: sx + dx * 1.4, y: h - 1))
+        tail.addLine(to: CGPoint(x: sx + dx * 0.4, y: h - 5))
+        tail.addLine(to: CGPoint(x: sx + dx * 0.1, y: h - 1))
+        tail.closeSubpath()
+        ctx.fill(tail, with: .color(Color(hex: "B83A2F")))
+        ctx.stroke(tail, with: .color(ink), lineWidth: 2)
+      }
+      let seal = Path(ellipseIn: CGRect(x: sx - 16, y: sy - 16, width: 32, height: 32))
+      ctx.fill(seal, with: .color(Color(hex: "D9483B")))
+      ctx.stroke(seal, with: .color(ink), lineWidth: 2.5)
+      ctx.stroke(Path(ellipseIn: CGRect(x: sx - 9, y: sy - 9, width: 18, height: 18)), with: .color(Color(hex: "A8322A")), lineWidth: 2)
     }
   }
 }

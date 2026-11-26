@@ -38,7 +38,6 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
     private var best = 0
     private var sound = false
     /** Treasures claimed by beating the Kraken, kept on this device. */
-    private var treasures = 0
     private var tone: ToneGenerator? = null
     private var active = false
     private var previousFrame = 0L
@@ -79,7 +78,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
-        best = prefs.getInt("best", 0); sound = prefs.getBoolean("sound", false); treasures = prefs.getInt("treasures", 0)
+        best = prefs.getInt("best", 0); sound = prefs.getBoolean("sound", false)
         // Recreating a process restores a safe menu, never a partially running frame.
         game.onEvent = { event ->
             if (event == "over") saveBest()
@@ -95,7 +94,7 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
                 "krakenDefeated" -> notice("The Kraken sinks · +${Game.TREASURE_BONUS} points", "crown", Clay.gold)
                 "over" -> if (::water.isInitialized) water.announceForAccessibility("Voyage complete. Score ${game.score}.")
                 "won" -> {
-                    saveBest(); treasures++; prefs.edit().putInt("treasures", treasures).apply()
+                    saveBest()
                     if (::water.isInitialized) water.announceForAccessibility("Treasure found! Score ${game.score}.")
                 }
             }
@@ -471,16 +470,9 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
             results.addView(stats, LinearLayout.LayoutParams(-1, -2))
             add(results, LinearLayout.LayoutParams(-1, -2))
         }
-        add(column(6).apply {
-            gravity = Gravity.CENTER_HORIZONTAL
-            addView(row(6).apply {
-                addView(icon("trophy", Clay.gold, 16))
-                addView(text(15f, Clay.creamMuted, 800).apply { text = "Personal best  ${Clay.digits(best)}"; fontFeatureSettings = "tnum" })
-            }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL })
-            if (treasures > 0) addView(row(6).apply {
-                addView(icon("chest", Clay.gold, 16))
-                addView(text(15f, Clay.creamMuted, 800).apply { text = "Treasures found  $treasures"; fontFeatureSettings = "tnum" })
-            }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL })
+        add(row(6).apply {
+            addView(icon("trophy", Clay.gold, 16))
+            addView(text(15f, Clay.creamMuted, 800).apply { text = "Personal best  ${Clay.digits(best)}"; fontFeatureSettings = "tnum" })
         })
         val canContinue = ads.isAvailable && game.canRevive
         if (canContinue) add(continueButton(), LinearLayout.LayoutParams(-1, -2))
@@ -591,31 +583,22 @@ class MainActivity : Activity(), Choreographer.FrameCallback {
                 centered(TreasureRevealView(this, reducedMotion, TreasureRevealView.Mode.BOTTLE).apply {
                     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 }, -1, dp(90))
-                val note = column(10).apply {
+                val note = column(14).apply {
                     addView(TextView(this@MainActivity).apply {
-                        text = "“Dunk this ship in water.”"; setTextColor(Clay.ink)
+                        text = "“Dunk this ship in water.”"; setTextColor(Clay.ink); gravity = Gravity.CENTER
                         setTextSize(TypedValue.COMPLEX_UNIT_SP, 23f); typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD_ITALIC)
                     })
                     addView(TextView(this@MainActivity).apply {
                         text = "— Barbosa"; setTextColor(Clay.ink); gravity = Gravity.END
                         setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f); typeface = Typeface.create(Typeface.SERIF, Typeface.ITALIC)
                     }, LinearLayout.LayoutParams(-1, -2))
-                    background = GradientDrawable().apply { setColor(Color.parseColor("#F6E7C1")); cornerRadius = dpf(16f); setStroke(dp(3), Clay.ink) }
-                    setPadding(dp(20), dp(22), dp(20), dp(22))
+                    // A paper scroll; the padding clears the rolled ends and the seal on the bottom roll.
+                    background = ScrollDrawable(resources.displayMetrics.density)
+                    setPadding(dp(34), dp(40), dp(34), dp(52))
                     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
                     contentDescription = "The letter reads: Dunk this ship in water. Signed, Barbosa."
                 }
-                val seal = View(this).apply {
-                    background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#D9483B")); setStroke(dp(2), Clay.ink) }
-                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                }
-                val letter = FrameLayout(this).apply {
-                    clipChildren = false
-                    addView(note, FrameLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
-                    addView(seal, FrameLayout.LayoutParams(dp(30), dp(30), Gravity.TOP or Gravity.END).apply { rightMargin = -dp(4) })
-                }
-                c.clipChildren = false
-                centered(letter, -1, -2, top = 18)
+                centered(note, -1, -2, top = 18)
                 spacer()
                 c.addView(clayButton("Keep the bottle", "check", primary = true, radius = 22, size = 20f, minHeight = 60) { finishTreasure() },
                     LinearLayout.LayoutParams(-1, -2))

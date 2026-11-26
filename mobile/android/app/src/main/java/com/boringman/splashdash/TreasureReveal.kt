@@ -130,3 +130,69 @@ class TreasureRevealView(
         cv.restore()
     }
 }
+
+/**
+ * A paper scroll: a parchment sheet between two rolled ends with wooden rod caps, a few age marks,
+ * and a red wax seal with ribbon tails on the bottom roll. Matches ScrollPaper on iOS.
+ * Content needs about 40dp top, 52dp bottom and 34dp side padding to clear the rolls and seal.
+ */
+class ScrollDrawable(private val density: Float) : android.graphics.drawable.Drawable() {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeJoin = Paint.Join.ROUND }
+    private val path = Path()
+    private val box = RectF()
+    private fun c(hex: String, alpha: Float = 1f) = Clay.alpha(Color.parseColor("#$hex"), alpha)
+
+    override fun draw(cv: Canvas) {
+        val d = density
+        val w = bounds.width().toFloat(); val h = bounds.height().toFloat()
+        cv.save(); cv.translate(bounds.left.toFloat(), bounds.top.toFloat())
+        val roll = 26 * d; val inset = 12 * d; val ink = Clay.ink
+        // The sheet, with gently waved sides.
+        path.reset()
+        path.moveTo(inset, roll / 2); path.lineTo(w - inset, roll / 2)
+        path.quadTo(w - inset + 5 * d, h / 2, w - inset, h - roll / 2)
+        path.lineTo(inset, h - roll / 2)
+        path.quadTo(inset - 5 * d, h / 2, inset, roll / 2); path.close()
+        paint.style = Paint.Style.FILL; paint.color = c("F6E7C1"); cv.drawPath(path, paint)
+        for ((x, y, r) in listOf(Triple(.22f, .35f, 16f), Triple(.78f, .62f, 20f), Triple(.4f, .8f, 12f))) {
+            paint.color = c("E8D29E", .55f); box.set(w * x - r * d, h * y - r * .7f * d, w * x + r * d, h * y + r * .7f * d); cv.drawOval(box, paint)
+        }
+        paint.style = Paint.Style.STROKE; paint.strokeWidth = 3 * d; paint.color = ink; cv.drawPath(path, paint)
+        // Shadows cast by the rolls onto the sheet.
+        paint.style = Paint.Style.FILL; paint.color = Clay.alpha(ink, .12f)
+        cv.drawRect(inset + 2 * d, roll - 2 * d, w - inset - 2 * d, roll + 4 * d, paint)
+        cv.drawRect(inset + 2 * d, h - roll - 4 * d, w - inset - 2 * d, h - roll + 2 * d, paint)
+        // The rolled ends, each with wooden rod caps.
+        for (y in floatArrayOf(0f, h - roll)) {
+            for (cx in floatArrayOf(3 * d, w - 3 * d)) {
+                box.set(cx - 6 * d, y + 3 * d, cx + 6 * d, y + roll - 3 * d)
+                paint.style = Paint.Style.FILL; paint.color = c("9A6E48"); cv.drawRoundRect(box, 4 * d, 4 * d, paint)
+                paint.style = Paint.Style.STROKE; paint.strokeWidth = 2.5f * d; paint.color = ink; cv.drawRoundRect(box, 4 * d, 4 * d, paint)
+            }
+            box.set(6 * d, y, w - 6 * d, y + roll)
+            paint.style = Paint.Style.FILL
+            paint.shader = LinearGradient(0f, y, 0f, y + roll, c("F2E2B8"), c("E0C68C"), Shader.TileMode.CLAMP)
+            cv.drawRoundRect(box, roll / 2, roll / 2, paint); paint.shader = null
+            paint.style = Paint.Style.STROKE; paint.strokeWidth = 2 * d; paint.color = c("C9AB6E")
+            cv.drawLine(20 * d, y + roll * .62f, w - 20 * d, y + roll * .62f, paint)
+            paint.strokeWidth = 3 * d; paint.color = ink; cv.drawRoundRect(box, roll / 2, roll / 2, paint)
+        }
+        // Wax seal with ribbon tails on the bottom roll.
+        val sx = w / 2; val sy = h - roll / 2 - 2 * d
+        for (dx in floatArrayOf(-8 * d, 8 * d)) {
+            path.reset()
+            path.moveTo(sx + dx * .4f, sy); path.lineTo(sx + dx * 1.4f, h - 1 * d)
+            path.lineTo(sx + dx * .4f, h - 5 * d); path.lineTo(sx + dx * .1f, h - 1 * d); path.close()
+            paint.style = Paint.Style.FILL; paint.color = c("B83A2F"); cv.drawPath(path, paint)
+            paint.style = Paint.Style.STROKE; paint.strokeWidth = 2 * d; paint.color = ink; cv.drawPath(path, paint)
+        }
+        paint.style = Paint.Style.FILL; paint.color = c("D9483B"); cv.drawCircle(sx, sy, 16 * d, paint)
+        paint.style = Paint.Style.STROKE; paint.strokeWidth = 2.5f * d; paint.color = ink; cv.drawCircle(sx, sy, 16 * d, paint)
+        paint.strokeWidth = 2 * d; paint.color = c("A8322A"); cv.drawCircle(sx, sy, 9 * d, paint)
+        cv.restore()
+    }
+    override fun setAlpha(alpha: Int) { paint.alpha = alpha; invalidateSelf() }
+    override fun setColorFilter(filter: ColorFilter?) { paint.colorFilter = filter; invalidateSelf() }
+    @Deprecated("Required by Drawable")
+    override fun getOpacity() = PixelFormat.TRANSLUCENT
+}
