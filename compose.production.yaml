@@ -1,0 +1,6 @@
+# Host nginx publishes ports 80 and 443; the web container is reachable only on loopback.
+# Port 4174 leaves 4173 free for Meal Manager when both run on the same VM.
+services:
+  web:
+    ports: !override
+      - "127.0.0.1:4174:80"

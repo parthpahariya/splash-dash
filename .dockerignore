@@ -1,0 +1,7 @@
+# Docker builds use the repository root; send only the website and Docker files.
+**
+!web/
+!web/**
+!docker/
+!docker/**
+**/.DS_Store

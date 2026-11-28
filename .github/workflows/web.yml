@@ -1,0 +1,62 @@
+name: Website
+
+# Checks the website image on pull requests. Pushes to DEPLOY_BRANCH also deploy it to the
+# Google Cloud VM behind https://thelastsail.boringman.in. See docs/web-deployment.md.
+on:
+  pull_request:
+    paths: &web-paths
+      - web/**
+      - docker/**
+      - deploy/**
+      - ci/check-web.sh
+      - compose.yaml
+      - compose.production.yaml
+      - .dockerignore
+      - Makefile
+      - .github/workflows/web.yml
+  push:
+    branches: [main]
+    paths: *web-paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Branch that deploys the website. Keep in sync with `branches` above and the deploy job's `if`.
+  DEPLOY_BRANCH: main
+
+jobs:
+  check:
+    name: Check website image and nginx configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: bash ci/check-web.sh
+
+  deploy:
+    name: Deploy to Google Cloud VM
+    needs: [check]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: website
+      url: https://thelastsail.boringman.in
+    concurrency:
+      group: the-last-sail-website
+      cancel-in-progress: false
+    env:
+      GCP_VM_HOST: ${{ vars.GCP_VM_HOST }}
+      GCP_VM_USER: ${{ vars.GCP_VM_USER }}
+      GCP_SSH_PRIVATE_KEY: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
+      GCP_SSH_KNOWN_HOSTS: ${{ secrets.GCP_SSH_KNOWN_HOSTS }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: bash deploy/ci-deploy.sh github

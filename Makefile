@@ -10,10 +10,53 @@ ifeq ($(origin IOS_DEVICE), undefined)
 IOS_DEVICE := $(shell xcrun devicectl list devices 2>/dev/null | awk '/physical/ && /(^|[[:space:]])available([[:space:]]|$$)/ { for (i = 1; i <= NF; i++) if ($$i ~ /^[0-9A-F]+-[0-9A-F]+$$/ && length($$i) == 25) { print $$i; exit } }')
 endif
 
-.PHONY: help ios-devices ios-device
+DOCKER ?= docker
+COMPOSE = $(DOCKER) compose -f compose.yaml
+COLIMA_PROFILE ?= default
+WEB_URL = http://127.0.0.1:$${WEB_PORT:-8080}/
+
+.PHONY: help ios-devices ios-device docker-ready web web-up web-down web-check deploy deploy-status
 
 help:
-	@printf '%s\n' 'make ios-devices  List paired devices and their identifiers.' 'make ios-device   Build, install, and launch The Last Sail on a physical iPhone.'
+	@printf '%s\n' \
+		'make ios-devices    List paired devices and their identifiers.' \
+		'make ios-device     Build, install, and launch The Last Sail on a physical iPhone.' \
+		'make web            Start Docker if needed, serve the website and open it in the browser.' \
+		'make web-up         Serve the website in Docker at http://127.0.0.1:8080.' \
+		'make web-down       Stop the local website container.' \
+		'make web-check      Build the website image and check its pages and nginx configs.' \
+		'make deploy         (VM only) Build and start the production website container.'
+
+# Start Colima when the Docker daemon is not reachable (local Mac development).
+docker-ready:
+	@$(DOCKER) info >/dev/null 2>&1 || { \
+		command -v colima >/dev/null || { echo 'Docker is not running. Start Docker or install Colima.' >&2; exit 1; }; \
+		echo 'Starting Colima ($(COLIMA_PROFILE))...'; colima start $(COLIMA_PROFILE); }
+
+web: web-up
+	@if command -v open >/dev/null; then open "$(WEB_URL)"; fi
+
+web-up: docker-ready
+	$(COMPOSE) up -d --build --wait
+	@echo "Website: $(WEB_URL)"
+
+web-down:
+	$(COMPOSE) down
+
+web-check: docker-ready
+	bash ci/check-web.sh
+
+# Production: run on the VM by deploy/bootstrap-vm.sh. Host nginx proxies to 127.0.0.1:4174.
+deploy deploy-status: COMPOSE += --project-name the-last-sail -f compose.production.yaml
+
+deploy:
+	$(COMPOSE) config --quiet
+	$(COMPOSE) build
+	@$(COMPOSE) up -d --no-build --wait --wait-timeout 120 || { \
+		$(COMPOSE) ps; echo 'Deployment failed. Inspect container health on the VM.' >&2; exit 1; }
+
+deploy-status:
+	$(COMPOSE) ps
 
 ios-devices:
 	xcrun devicectl list devices
