@@ -15,10 +15,11 @@ stages:
   - test
   - deploy
 
-# Android and iOS CI/CD stay in their own files.
+# Android, iOS and website CI/CD stay in their own files.
 include:
   - local: .gitlab/android.yml
   - local: .gitlab/ios.yml
+  - local: .gitlab/web.yml
 
 default:
   interruptible: true
@@ -26,3 +27,5 @@ default:
 variables:
   # Branch whose Android changes build a Google Play release.
   RELEASE_BRANCH: codex/splash-dash-2026-11-25
+  # Branch whose website changes deploy https://thelastsail.boringman.in.
+  DEPLOY_BRANCH: main
