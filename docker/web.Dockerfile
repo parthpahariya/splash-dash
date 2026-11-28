@@ -5,9 +5,12 @@ FROM nginx:1.28-alpine
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY web/ /usr/share/nginx/html/
 
+# The VM checks the repository out under umask 077, and COPY keeps those 600/700 modes, so
+# the unprivileged nginx worker would get 403 on every page. Make the site world-readable.
 # Pages link the stylesheet as site.css?v=dev. Replace "dev" with a hash of the file so
 # every stylesheet change gets a new URL and no browser pairs new pages with an old cached copy.
-RUN cd /usr/share/nginx/html \
+RUN chmod -R a+rX /usr/share/nginx/html /etc/nginx/conf.d/default.conf \
+    && cd /usr/share/nginx/html \
     && version=$(md5sum site.css | cut -c1-10) \
     && find . -name '*.html' -exec sed -i "s/site\.css?v=dev/site.css?v=$version/g" {} + \
     && ! grep -rl 'site\.css?v=dev' --include='*.html' .
